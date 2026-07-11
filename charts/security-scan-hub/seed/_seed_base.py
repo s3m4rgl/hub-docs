@@ -687,6 +687,18 @@ def past(days: float):
     Keeps demo data within the license grace period."""
     return now_utc() - timedelta(days=min(days, _DEMO_MAX_HISTORY_DAYS))
 
+def past_range(min_days: float, max_days: float):
+    """Uniform random past datetime, with the (min_days, max_days) range itself
+    rescaled to fit inside _DEMO_MAX_HISTORY_DAYS instead of relying on past()'s
+    per-call clamp. A plain past(random.uniform(1, 90)) with a 25-day cap makes
+    every sample above 25 collapse onto the exact same clamped timestamp — most
+    of a 1-90 day range piles onto one day. Rescaling first keeps relative
+    ordering between callers (e.g. projects older than their findings) while
+    spreading dates smoothly across the whole grace window."""
+    capped_max = min(max_days, _DEMO_MAX_HISTORY_DAYS)
+    capped_min = min(min_days, capped_max)
+    return past(random.uniform(capped_min, capped_max))
+
 def future(days: float):
     return now_utc() + timedelta(days=days)
 

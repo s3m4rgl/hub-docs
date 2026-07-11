@@ -5,7 +5,7 @@ import random
 import uuid
 
 from _seed_base import (
-    Scale, bulk_insert, fetchall, future, now_utc, past,
+    Scale, bulk_insert, fetchall, future, now_utc, past, past_range,
     random_ip_in_cidr, upsert_by,
 )
 
@@ -36,12 +36,12 @@ def gen_scope_for_project(conn, project: dict, scale: Scale, users: list) -> dic
             "disabled_at": None,
             "disabled_by": "",
             "disabled_reason": "",
-            "created_at": past(random.uniform(10, 180)),
+            "created_at": past_range(10, 180),
             "updated_at": now_utc(),
         }
         if disabled:
             e.update({
-                "disabled_at": past(random.uniform(1, 30)),
+                "disabled_at": past_range(1, 30),
                 "disabled_by": "sync",
                 "disabled_reason": (
                     "Address removed from NetBox (status changed to deprecated)"
@@ -87,7 +87,7 @@ def gen_scope_for_project(conn, project: dict, scale: Scale, users: list) -> dic
                 "value": src_domain or domain,
                 "via": {"type": "scanner", "value": scanner},
             }),
-            "created_at": past(random.uniform(1, 60)),
+            "created_at": past_range(1, 60),
             "reviewed_by": None,
             "reviewed_at": None,
         }
@@ -95,7 +95,7 @@ def gen_scope_for_project(conn, project: dict, scale: Scale, users: list) -> dic
             reviewer = random.choice(users)
             p.update({
                 "reviewed_by": str(reviewer["id"]),
-                "reviewed_at": past(random.uniform(0, 1)),
+                "reviewed_at": past_range(0, 1),
             })
         return p
 
@@ -140,7 +140,7 @@ def gen_scope_for_project(conn, project: dict, scale: Scale, users: list) -> dic
         "include_tenants_mode": "any",
         "exclude_tenants_mode": "any",
         "import_tags": True,
-        "last_run_at": past(random.uniform(0.5, 3)),
+        "last_run_at": past_range(0.5, 3),
         "last_run_status": random.choice(["success", "success", "partial"]),
         "last_run_result": json.dumps({"appeared": 3, "vanished": 1, "total": 12}),
         "next_run_at": future(random.uniform(1, 24) / 24),
@@ -165,7 +165,7 @@ def gen_scope_for_project(conn, project: dict, scale: Scale, users: list) -> dic
                 },
             },
         }]),
-        "first_seen_at": past(random.uniform(5, 60)),
+        "first_seen_at": past_range(5, 60),
         "last_seen_at": now_utc(),
     } for ip in live_ips[:3]], conflict="DO NOTHING")
 

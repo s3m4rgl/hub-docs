@@ -37,6 +37,12 @@ from _seed_social import (
 from _seed_sa import gen_service_accounts
 
 CLEAN_TABLES = [
+    # Truncated so backend's licensing.EnsureInstance (idempotent, runs on every
+    # startup) recreates this row with created_at=NOW() on next restart. Without
+    # this, GetInstanceCreatedAt's MIN(created_at) across business tables keeps
+    # picking up this table's original provisioning date forever — no amount of
+    # reseeding the other tables can extend the license grace period past it.
+    "license_instance",
     "audit_logs",
     "assignments",
     "comments",

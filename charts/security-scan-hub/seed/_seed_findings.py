@@ -12,7 +12,7 @@ from _seed_base import (
     TRIVY_RULES, Scale,
     bulk_insert, calculate_dedup_hash, calculate_location_hash,
     calculate_network_dedup_hash, network_location_hash,
-    now_utc, past, random_git_sha,
+    now_utc, past_range, random_git_sha,
 )
 
 ENGINE_VERSIONS = {
@@ -50,10 +50,10 @@ def gen_reports(conn, products: list, users: list) -> dict:
                 "engine": engine,
                 "engine_version": ENGINE_VERSIONS[engine],
                 "status": "processed",
-                "processed_at": past(random.uniform(0.1, 30)),
+                "processed_at": past_range(0.1, 30),
                 "findings_count": 0,
                 "commit_id": commit,
-                "created_at": past(random.uniform(1, 60)),
+                "created_at": past_range(1, 60),
             }
             bulk_insert(conn, "reports", [row], conflict="DO NOTHING")
             reports.append(row)
@@ -79,7 +79,7 @@ def gen_finding_groups(conn, products: list, users: list) -> dict:
                 "group_rule": "manual",
                 "leader_finding_id": None,
                 "created_by": str(random.choice(users)["id"]),
-                "created_at": past(random.uniform(1, 60)),
+                "created_at": past_range(1, 60),
                 "updated_at": now_utc(),
             }
             bulk_insert(conn, "finding_groups", [row], conflict="DO NOTHING")
@@ -108,7 +108,7 @@ def _make_code_row(product_id: str, rule: dict, scanner: str, group_id=None) -> 
     dedup = calculate_dedup_hash(product_id, rule["rule_id"], loc)
     sev = rule.get("severity") or random.choices(SEVERITIES, SEVERITY_WEIGHTS)[0]
     status = random.choices(FINDING_STATUSES, STATUS_WEIGHTS)[0]
-    first = past(random.uniform(1, 90))
+    first = past_range(1, 90)
     sla_s = first if status in ("confirmed", "risk_accepted") else None
     sla_e = (sla_s + timedelta(days=SLA_DAYS[sev])) if sla_s else None
     return {
@@ -138,7 +138,7 @@ def _make_code_row(product_id: str, rule: dict, scanner: str, group_id=None) -> 
         "tags": json.dumps([]),
         "group_id": str(group_id) if group_id else None,
         "first_seen_at": first,
-        "last_seen_at": past(random.uniform(0, 1)),
+        "last_seen_at": past_range(0, 1),
         "sla_started_at": sla_s,
         "sla_expires_at": sla_e,
         "created_at": first,
@@ -252,7 +252,7 @@ def _net_row(pid: str, scope: dict, rule: dict, scanner: str) -> dict:
     trail = _build_trail(domain, ip, port, proto)
     sev = rule["severity"]
     status = random.choices(FINDING_STATUSES, STATUS_WEIGHTS)[0]
-    first = past(random.uniform(1, 60))
+    first = past_range(1, 60)
     sla_s = first if status == "confirmed" else None
     sla_e = (sla_s + timedelta(days=SLA_DAYS[sev])) if sla_s else None
     return {
@@ -393,7 +393,7 @@ def gen_secret_findings(
             )
             sev = rule["severity"]
             status = random.choices(FINDING_STATUSES, STATUS_WEIGHTS)[0]
-            first = past(random.uniform(1, 60))
+            first = past_range(1, 60)
             sla_s = first if status in ("confirmed", "risk_accepted") else None
             sla_e = (sla_s + timedelta(days=SLA_DAYS[sev])) if sla_s else None
             g = random.choice(groups) if groups and random.random() < 0.3 else None

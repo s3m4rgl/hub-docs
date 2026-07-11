@@ -5,7 +5,7 @@ import uuid
 
 from _seed_base import (
     COMPANY_POOL, PRODUCT_ARCHETYPES, Scale,
-    bulk_insert, fetchall, now_utc, past, upsert_by,
+    bulk_insert, fetchall, now_utc, past_range, upsert_by,
 )
 
 DEFAULT_SLA = {"critical": 7, "high": 14, "medium": 30, "low": 90}
@@ -35,7 +35,7 @@ def gen_projects(conn, scale: Scale, users: list, fake) -> list:
                 "webhook_url": f"https://mm.{_slug(company)}.internal/hooks/xxx",
                 "channel": "security-alerts",
             },
-            "created_at": past(random.uniform(60, 365)),
+            "created_at": past_range(60, 365),
             "updated_at": now_utc(),
         }, conflict_cols=["name"])
     return fetchall(conn, "SELECT * FROM projects WHERE name = ANY(%s)", (pool,))
@@ -54,7 +54,7 @@ def gen_products(conn, projects: list, fake) -> list:
                     f"https://gitlab.com/{_slug(project['name'])}/{arch['repo_suffix']}"
                 ),
                 "default_branch": arch["default_branch"],
-                "created_at": past(random.uniform(30, 300)),
+                "created_at": past_range(30, 300),
                 "updated_at": now_utc(),
             }, conflict_cols=["project_id", "name"])
     return fetchall(

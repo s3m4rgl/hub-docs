@@ -4,7 +4,7 @@ import random
 import uuid
 
 from _seed_base import (
-    SA_ARCHETYPES, Scale, bulk_insert, generate_api_key, now_utc, past,
+    SA_ARCHETYPES, Scale, bulk_insert, generate_api_key, now_utc, past_range,
 )
 
 SCOPE_READ = "read_findings"
@@ -24,7 +24,7 @@ def gen_service_accounts(
             "description": arch["description"],
             "owner_id": str(owner["id"]),
             "is_active": True,
-            "created_at": past(random.uniform(1, 60)),
+            "created_at": past_range(1, 60),
             "updated_at": now_utc(),
         }], conflict="DO NOTHING")
 

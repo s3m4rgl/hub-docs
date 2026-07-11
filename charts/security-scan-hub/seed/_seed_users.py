@@ -5,7 +5,7 @@ import uuid
 
 import bcrypt
 
-from _seed_base import TAG_POOL, Scale, bulk_insert, fetchall, now_utc, past
+from _seed_base import TAG_POOL, Scale, bulk_insert, fetchall, now_utc, past_range
 
 AI_SYSTEM_USER_ID = "8e4cf47a-1d9b-4f3c-b2e0-7a5d3c8f1e96"
 ADMIN_EMAIL       = "admin@demo.local"
@@ -52,7 +52,7 @@ def gen_users(conn, scale: Scale, fake) -> list:
             "full_name": f"{first} {last}",
             "is_active": True,
             "password_hash": _hash_password(ADMIN_PASSWORD),
-            "created_at": past(random.uniform(30, 365)),
+            "created_at": past_range(30, 365),
             "updated_at": now_utc(),
         })
     for row in rows:
