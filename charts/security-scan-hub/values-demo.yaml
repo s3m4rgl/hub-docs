@@ -43,7 +43,18 @@ frontend:
       authMode: LOCAL
 
 ingress:
-  host: sshub.ru
+  ## Реальный основной хост живого стенда — rootsec.ru (secretName по умолчанию
+  ## chart.tlsSecretName = "hub-tls", Certificate hub-tls выпущен именно на rootsec.ru,
+  ## проверено `kubectl get certificate hub-tls -o jsonpath='{.spec.dnsNames}'`).
+  host: rootsec.ru
+  ## sshub.ru — alias-хост того же демо-стенда (публичное имя, под которым стенд
+  ## обычно называют), обслуживается тем же ingress'ом со своим отдельным
+  ## cert-manager Certificate/Secret (hub-sshub-tls, выпущен на sshub.ru). Раньше
+  ## добавлялся вручную через kubectl — пропадал при helm rollback/переустановке
+  ## (именно так и произошло 2026-07-11) — теперь закреплён в чарте.
+  extraHosts:
+  - host: sshub.ru
+    tlsSecretName: hub-sshub-tls
 
 demoReseed:
   enabled: true

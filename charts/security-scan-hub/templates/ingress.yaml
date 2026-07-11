@@ -14,6 +14,11 @@ spec:
   - hosts:
     - {{ tpl (.Values.ingress.host | default "") . | quote }}
     secretName: {{ include "chart.tlsSecretName" . }}
+  {{- range .Values.ingress.extraHosts }}
+  - hosts:
+    - {{ tpl (.host | default "") $ | quote }}
+    secretName: {{ required "ingress.extraHosts[].tlsSecretName is required" .tlsSecretName }}
+  {{- end }}
   {{- end }}
   rules:
   - host: {{ tpl (.Values.ingress.host | default "") . | quote }}
@@ -40,4 +45,30 @@ spec:
             name: {{ include "chart.fullname" . }}-frontend
             port:
               number: 3000
+  {{- range .Values.ingress.extraHosts }}
+  - host: {{ tpl (.host | default "") $ | quote }}
+    http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ include "chart.fullname" $ }}-backend
+            port:
+              number: 8082
+      - path: /swagger
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ include "chart.fullname" $ }}-backend
+            port:
+              number: 8082
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ include "chart.fullname" $ }}-frontend
+            port:
+              number: 3000
+  {{- end }}
 {{- end }}

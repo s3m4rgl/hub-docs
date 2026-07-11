@@ -217,6 +217,11 @@ ingress:
   enabled: true
   className: traefik
   host: hub.example.com
+  ## Дополнительные хосты (алиасы/поддомены), обслуживающие тот же бэкенд/фронтенд,
+  ## каждый со своим TLS-секретом (обычно отдельный cert-manager Certificate,
+  ## т.к. secretName у cert-manager привязан к конкретному набору DNS-имён).
+  ## Пример: [{host: "alias.example.com", tlsSecretName: "alias-tls"}]
+  extraHosts: []
   ## Параметры, специфичные для класса (только nginx)
   proxyBodySize: "100m"
   proxyReadTimeout: "300"
