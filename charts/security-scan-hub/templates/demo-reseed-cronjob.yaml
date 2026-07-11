@@ -42,7 +42,7 @@ spec:
               set -e
               pip install --quiet --root-user-action=ignore psycopg2-binary faker bcrypt
               python /seed/seed_demo.py --db-url "$DB_URL" --clean --scale {{ .Values.demoReseed.scale | default "small" }}
-              echo "reseed done; restarting backend to reload Casbin/state"
+              echo "reseed done; restarting backend/frontend/worker to reload Casbin/state and re-pull :latest"
               python - <<'PY'
               import os,json,ssl,datetime,urllib.request
               tok=open('/var/run/secrets/kubernetes.io/serviceaccount/token').read()
@@ -51,9 +51,18 @@ spec:
               ts=datetime.datetime.utcnow().isoformat()+'Z'
               body=json.dumps({"spec":{"template":{"metadata":{"annotations":{"kubectl.kubernetes.io/restartedAt":ts}}}}}).encode()
               ctx=ssl.create_default_context(cafile=ca)
-              dep="{{ include "chart.fullname" . }}-backend"
-              req=urllib.request.Request("https://%s:%s/apis/apps/v1/namespaces/{{ .Release.Namespace }}/deployments/%s"%(h,p,dep),data=body,method='PATCH',headers={'Authorization':'Bearer '+tok,'Content-Type':'application/strategic-merge-patch+json'})
-              print("restarted",dep,urllib.request.urlopen(req,context=ctx).status)
+              # Restart all three demo-image deployments every reseed cycle, not just
+              # backend: with imagePullPolicy=Always this forces a fresh registry
+              # check/pull of :latest on each cycle instead of leaving frontend/worker
+              # running whatever image was pulled at the last install/rollout.
+              deps = [
+                  "{{ include "chart.fullname" . }}-backend",
+                  "{{ include "chart.fullname" . }}-frontend",
+                  "{{ include "chart.fullname" . }}-worker",
+              ]
+              for dep in deps:
+                  req=urllib.request.Request("https://%s:%s/apis/apps/v1/namespaces/{{ .Release.Namespace }}/deployments/%s"%(h,p,dep),data=body,method='PATCH',headers={'Authorization':'Bearer '+tok,'Content-Type':'application/strategic-merge-patch+json'})
+                  print("restarted",dep,urllib.request.urlopen(req,context=ctx).status)
               PY
             volumeMounts:
             - name: seed
