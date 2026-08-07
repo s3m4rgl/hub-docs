@@ -10,15 +10,20 @@
  * перетаскивание мышью, Esc — закрыть. Схема также открывается с клавиатуры
  * (Tab + Enter/Space).
  *
- * Деградация: если CDN с mermaid недоступен или загрузка зависла (например,
- * за корпоративным прокси) — читатель должен увидеть понятное сообщение и
- * исходный текст схемы, а не пустое место без единого слова.
+ * Библиотека лежит рядом, в этом же репозитории (assets/js/mermaid.min.js), а
+ * не тянется с внешней CDN. Причины две: сайт читают в том числе из закрытых
+ * контуров и из-за корпоративных прокси, где внешняя загрузка не проходит; и
+ * модульная сборка mermaid тянет десятки отдельных файлов, из-за чего
+ * загрузка не укладывалась в разумный тайм-аут даже при доступной сети.
+ *
+ * Деградация: если библиотека почему-то не загрузилась — читатель должен
+ * увидеть понятное сообщение и исходный текст схемы, а не пустое место без
+ * единого слова.
  */
 (function () {
   "use strict";
 
-  var MERMAID_URL = "https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs";
-  var MERMAID_LOAD_TIMEOUT_MS = 7000;
+  var MERMAID_LOAD_TIMEOUT_MS = 15000;
   var OVERLAY_ID = "diagram-zoom-overlay";
   var mermaidPromise = null;
   var viewer = null;
@@ -77,8 +82,18 @@
   function loadMermaid() {
     if (mermaidPromise) return mermaidPromise;
 
-    var importPromise = import(MERMAID_URL).then(function (mod) {
-      return mod.default;
+    /* mermaid.min.js подключён обычным <script> перед этим файлом и выставляет
+     * globalThis.mermaid. Обычно он уже готов к этому моменту, но порядок
+     * выполнения скриптов темы не гарантирован, поэтому ждём появления
+     * глобала опросом, а не полагаемся на него сразу. */
+    var readyPromise = new Promise(function (resolve) {
+      if (window.mermaid) return resolve(window.mermaid);
+      var poll = setInterval(function () {
+        if (window.mermaid) {
+          clearInterval(poll);
+          resolve(window.mermaid);
+        }
+      }, 50);
     });
     var timeoutPromise = new Promise(function (resolve, reject) {
       setTimeout(function () {
@@ -86,7 +101,7 @@
       }, MERMAID_LOAD_TIMEOUT_MS);
     });
 
-    mermaidPromise = Promise.race([importPromise, timeoutPromise]).catch(function (err) {
+    mermaidPromise = Promise.race([readyPromise, timeoutPromise]).catch(function (err) {
       // не кэшируем неудачу — сеть могла отвиснуть, следующая перерисовка
       // (например, смена темы) должна получить шанс попробовать снова
       mermaidPromise = null;

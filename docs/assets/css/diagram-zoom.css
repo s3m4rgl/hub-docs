@@ -44,10 +44,13 @@ body.dz-lock {
   cursor: grabbing;
 }
 
+/* Подложка схемы в модальном окне обязана совпадать по светлоте с темой
+ * страницы: схема отрисована mermaid'ом под текущую тему, и светлая подложка
+ * под тёмной схемой делает подписи стрелок практически невидимыми. */
 .dz-canvas {
   transform-origin: 0 0;
   will-change: transform;
-  background: #fff;
+  background: var(--md-default-bg-color, #fff);
   padding: 1.25rem;
   border-radius: 6px;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);

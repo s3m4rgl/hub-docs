@@ -58,7 +58,11 @@ plugins:
 extra_css:
   - assets/css/diagram-zoom.css
 
+# Библиотека схем лежит в репозитории, а не тянется с внешней CDN: сайт читают
+# в том числе из закрытых контуров. Версия зафиксирована — плавающая однажды
+# уже молча ломала отрисовку. Порядок важен: mermaid раньше diagram-zoom.
 extra_javascript:
+  - assets/js/mermaid.min.js
   - assets/js/diagram-zoom.js
 
 nav:
