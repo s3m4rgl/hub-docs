@@ -54,7 +54,7 @@ DomainScope сохраняет **происхождение** каждого д�
 DOMAINSCOPE_SARIF_IP_SCOPE=public   # all / public / private
 ```
 
-См. [`domainscope-scanners.md`](domainscope-scanners.md).
+См. [Управление сканерами DomainScope](domainscope-scanners.md).
 
 ## Источники provenance
 
@@ -86,5 +86,5 @@ IP-адреса (`ip_addresses.source`):
 
 ## Связанные документы
 
-- [`domainscope-scanners.md`](domainscope-scanners.md) — управление сканерами и IP_SCOPE фильтр
-- [`domainscope-netbox.md`](domainscope-netbox.md) — sync с NetBox
+- [Управление сканерами DomainScope](domainscope-scanners.md) — управление сканерами и IP_SCOPE фильтр
+- [DomainScope и NetBox](domainscope-netbox.md) — sync с NetBox

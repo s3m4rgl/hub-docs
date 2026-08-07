@@ -139,7 +139,7 @@ max_connections = 200
 3. **Secret backup** — Vault snapshots
 4. **Backup-тест** — раз в квартал восстановите из backup на staging и проверьте, что Hub стартует и видит данные
 
-Подробнее: [ 18 ](operations.md).
+Подробнее: [Эксплуатация](operations.md).
 
 ## Что нужно подготовить ДО установки
 

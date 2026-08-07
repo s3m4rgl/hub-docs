@@ -38,14 +38,14 @@
 | Переменная | Назначение | Значения | По умолчанию | Компонент |
 |---|---|---|---|---|
 | `OIDC_<NAME>_DISPLAY_NAME` | Метка кнопки входа в UI | строка | имя провайдера | оба |
-| `OIDC_<NAME>_DISCOVERY_URL` | URL OIDC well-known (`/.well-known/openid-configuration`). Обязательна, если не заданы все endpoint-overrides явно | URL | `""` | оба |
+| `OIDC_<NAME>_DISCOVERY_URL` | URL OIDC well-known (`/.well-known/openid-configuration`). Обязательна, если не заданы все эндпоинт-overrides явно | URL | `""` | оба |
 | `OIDC_<NAME>_CLIENT_ID` | Client ID в IdP | строка | `""` | оба |
 | `OIDC_<NAME>_CLIENT_SECRET` | Client Secret | строка (секрет) | `""` | оба |
 | `OIDC_<NAME>_SCOPES` | Запрашиваемые scopes — через **пробел** | строка | `openid profile email` | оба |
 | `OIDC_<NAME>_AUTO_PROVISION` | Автосоздание пользователей в БД при первом входе (роль `viewer`). `false` — принимать только уже существующих | `true` \| `false` | `true` | оба |
 | `OIDC_<NAME>_TRUST_EMAIL` | Доверять email из IdP как верифицированному, даже если `email_verified` отсутствует в токене. **Обязательна для Microsoft Entra ID (Azure AD v2)** — без неё любой вход через Azure завершается 403 | `true` \| `false` | `false` | оба |
-| `OIDC_<NAME>_AUTH_URL` | Переопределение authorization endpoint | URL | из discovery | оба |
-| `OIDC_<NAME>_TOKEN_URL` | Переопределение token endpoint | URL | из discovery | оба |
+| `OIDC_<NAME>_AUTH_URL` | Переопределение authorization эндпоинт | URL | из discovery | оба |
+| `OIDC_<NAME>_TOKEN_URL` | Переопределение token эндпоинт | URL | из discovery | оба |
 | `OIDC_<NAME>_JWKS_URL` | Переопределение jwks_uri | URL | из discovery | оба |
 | `OIDC_<NAME>_ISSUER` | Переопределение issuer | URL | из discovery | оба |
 | `OIDC_<NAME>_END_SESSION_URL` | Переопределение end_session_endpoint | URL | из discovery | оба |
@@ -119,7 +119,7 @@
 | `SANDBOX_WG_POD_IP` | WireGuard IP pod (CIDR) | CIDR | `10.200.0.3/32` | оба |
 | `SANDBOX_WG_PRIVATE_KEY` | WireGuard приватный ключ (docker/local) | строка (секрет) | `""` | оба |
 | `SANDBOX_WG_SERVER_PUBLIC_KEY` | WireGuard публичный ключ сервера | строка | `""` | оба |
-| `SANDBOX_WG_SERVER_ENDPOINT` | WireGuard endpoint сервера | host:port | `""` | оба |
+| `SANDBOX_WG_SERVER_ENDPOINT` | WireGuard эндпоинт сервера | host:port | `""` | оба |
 
 ## Уведомления (Telegram / Mattermost)
 
@@ -188,7 +188,7 @@
 | Переменная | Назначение | Значения | По умолчанию | Компонент |
 |---|---|---|---|---|
 | `FEATURE_DUAL_VERIFY` | Мастер-флаг dual_confirm flow | `true` \| `false` | `false` | оба |
-| `DOMAINSCOPE_VERIFY_URL` | Endpoint сканера для POST verify-находка. В prod обязан `https://` | URL | `""` | оба |
+| `DOMAINSCOPE_VERIFY_URL` | Эндпоинт сканера для POST verify-находка. В prod обязан `https://` | URL | `""` | оба |
 | `DOMAINSCOPE_VERIFY_API_KEY` | Outbound API-key Hub→DomainScope | строка (секрет) | `""` | оба |
 | `DOMAINSCOPE_VERIFY_HMAC_SECRET` | HMAC-подпись исходящих запросов | строка (секрет) | `""` | оба |
 | `SCANNER_CALLBACK_API_KEY` | Inbound API-key для callback от сканера | строка (секрет) | `""` | оба |

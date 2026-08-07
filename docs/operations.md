@@ -243,7 +243,7 @@ docker compose logs domain-scope | grep "cycle"
 Удаляются и файл, и запись в базе. Проверить, что именно будет удалено, не
 удаляя, можно через `CLEANUP_DRY_RUN=true`.
 
-Конфиг — см. [ 52 ](configuration.md) → `CLEANUP_*`.
+Конфиг — см. [Конфигурация: обзор и соглашения](configuration.md) → `CLEANUP_*`.
 
 ### Refresh tokens
 
@@ -293,7 +293,7 @@ bantime = 3600
 
 - OS: `unattended-upgrades` (Ubuntu/Debian) или `dnf-automatic` (RHEL)
 - Docker base-images: пересобирайте раз в месяц с свежим `apk upgrade` / `apt upgrade`
-- Hub: следите за релизами, обновляйте раз в 2-4 недели (см. [ 60 ](upgrades.md))
+- Hub: следите за релизами, обновляйте раз в 2-4 недели (см. [Обновления](upgrades.md))
 
 ## Производительность
 
@@ -342,8 +342,8 @@ RTO целевой: < 4 часа. RPO: < 24 часа (с ежедневными 
 
 ## Связанные документы
 
-- [ 62 ](upgrades.md) — обновления и миграции
-- [ 63 ](troubleshooting.md) — типовые проблемы
+- [Обновления](upgrades.md) — обновления и миграции
+- [Диагностика](troubleshooting.md) — типовые проблемы
 
 
 Что именно переживает отказ, а что нет, и какие резервные копии обязательны —

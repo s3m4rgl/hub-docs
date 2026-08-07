@@ -12,7 +12,7 @@
 
 | Переменная | Назначение | Значения | По умолчанию |
 |---|---|---|---|
-| `DOMAINSCOPE_ENV` | Индикатор окружения. В `production` secret-несущие endpoints обязаны быть `https://` (если нет соответствующего `*_INSECURE`) | `production` \| `prod` \| `dev` \| строка | пусто (= не-prod); fallback на `APP_ENV` |
+| `DOMAINSCOPE_ENV` | Индикатор окружения. В `production` secret-несущие эндпоинты обязаны быть `https://` (если нет соответствующего `*_INSECURE`) | `production` \| `prod` \| `dev` \| строка | пусто (= не-prod); fallback на `APP_ENV` |
 
 ## Scope / домены
 
@@ -87,7 +87,7 @@
 | `DOMAINSCOPE_HUB_API_ENDPOINT` | URL Hub API | URL | пусто |
 | `DOMAINSCOPE_HUB_API_TOKEN` | Токен сервис-аккаунта (X-API-Key, секрет) | строка | пусто |
 | `DOMAINSCOPE_HUB_PROJECT_IDS` | UUID проектов Hub | CSV UUID | пусто |
-| `DOMAINSCOPE_HUB_INSECURE` | Разрешить `http://` Hub endpoint в prod | bool | `false` |
+| `DOMAINSCOPE_HUB_INSECURE` | Разрешить `http://` Hub эндпоинт в prod | bool | `false` |
 
 > При `enabled=true` обязательны `api_endpoint`, `api_token`, `project_ids`; в prod — `https://` (если нет `HUB_INSECURE=true`).
 
@@ -231,4 +231,4 @@
 - `DOMAINSCOPE_ZAP_ENABLED=true` → `DOMAINSCOPE_ZAP_INSTANCES_JSON` (≥1 инстанс с `url`+`api_key`).
 - `METABASE_ENABLED=true` → `METABASE_BASE_URL`.
 - `VERIFY_API_KEY` задан → `VERIFY_HMAC_SECRET`, `HUB_CALLBACK_API_KEY`, `HUB_CALLBACK_HMAC_SECRET`.
-- В **production** все secret-несущие endpoints обязаны быть `https://`, если не выставлен соответствующий `*_INSECURE=true`.
+- В **production** все secret-несущие эндпоинты обязаны быть `https://`, если не выставлен соответствующий `*_INSECURE=true`.

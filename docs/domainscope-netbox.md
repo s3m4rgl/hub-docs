@@ -163,7 +163,7 @@ Token будет в формате `nbt_xxxxxxxxxxxxxx`.
 | --------------- | ------------------------------------------------------------------------- |
 | **NetBox**      | Источник правды по инфраструктуре. Кто чем владеет, какие IP/домены живут |
 | **DomainScope** | Активная разведка. Что НА САМОМ ДЕЛЕ доступно снаружи                     |
-| **Hub**         | Аналитика находки + workflow по фиксам                                   |
+| **Hub** | Разбор находок и работа по их устранению |
 
 Идеальная схема: NetBox = inventory, DomainScope = recon, Hub = vuln-management. Каждый слой знает только свою часть.
 
@@ -222,5 +222,5 @@ INFO Discovery cycle finished
 
 ## Связанные документы
 
-- [ 46 ](integration-netbox.md) — NetBox sync со стороны Hub
-- [ 47 ](domainscope-trails.md) — provenance в DomainScope
+- [Интеграция с NetBox](integration-netbox.md) — NetBox sync со стороны Hub
+- [Происхождение записей периметра](domainscope-trails.md) — provenance в DomainScope

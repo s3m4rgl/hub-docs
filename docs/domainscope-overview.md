@@ -6,7 +6,7 @@
 
 1. **Discovery** — subfinder + DNS-резолвинг → расширяет seed-домены до полного inventory поддоменов
 2. **Port scan** — nmap по обнаруженным IP, fingerprinting сервисов
-3. **Nuclei HTTP** — vulnerability templates по HTTP/HTTPS endpoint'ам
+3. **Nuclei HTTP** — vulnerability templates по HTTP/HTTPS эндпоинтам
 4. **OpenVAS** (опц.) — CVE-сканирование (Greenbone Community Edition)
 5. **TLSX** — анализ TLS-сертификатов (expiry, weak ciphers)
 6. **OWASP ZAP** (опц.) — активный DAST против найденных web-приложений
@@ -46,7 +46,7 @@
 
 **1. SARIF reports (DomainScope → Hub):**
 
-DomainScope формирует SARIF из результатов каждого цикла сканирования (nuclei, openvas, tlsx и др.) и шлёт в Hub стандартным upload endpoint'ом (см. [`integration-sarif.md`](integration-sarif.md)):
+DomainScope формирует SARIF из результатов каждого цикла сканирования (nuclei, openvas, tlsx и др.) и шлёт в Hub стандартным upload эндпоинтом (см. [Загрузка отчётов внешних сканеров](integration-sarif.md)):
 
 ```
 POST https://hub.example.com/api/v1/products/<product_id>/reports
@@ -174,9 +174,9 @@ DOMAINSCOPE_ZAP_ENABLED=true
 
 ## Проверки состояния
 
-DomainScope экспонирует HTTP endpoints (если `DOMAINSCOPE_HEALTH_ENABLED=true`):
+DomainScope экспонирует HTTP эндпоинты (если `DOMAINSCOPE_HEALTH_ENABLED=true`):
 
-| Endpoint      | Что                                                 |
+| Эндпоинт      | Что                                                 |
 | ------------- | --------------------------------------------------- |
 | `GET /health` | Liveness — всегда 200 если процесс жив              |
 | `GET /ready`  | Readiness — 200 если БД доступна и нет stuck циклов |
@@ -185,7 +185,7 @@ DomainScope экспонирует HTTP endpoints (если `DOMAINSCOPE_HEALTH_
 
 ## Связанные документы
 
-- [`domainscope-install.md`](domainscope-install.md) — установка
-- [`domainscope-scanners.md`](domainscope-scanners.md) — управление сканерами
-- [`domainscope-netbox.md`](domainscope-netbox.md) — NetBox sync
-- [`domainscope-trails.md`](domainscope-trails.md) — discovery trails / провенанс
+- [Установка DomainScope](domainscope-install.md) — установка
+- [Управление сканерами DomainScope](domainscope-scanners.md) — управление сканерами
+- [DomainScope и NetBox](domainscope-netbox.md) — NetBox sync
+- [Происхождение записей периметра](domainscope-trails.md) — discovery trails / провенанс

@@ -39,19 +39,19 @@ SSO_PROVIDERS=keycloak,okta      # Keycloak + Okta
 | Переменная | Назначение | Обязательна | По умолчанию |
 |---|---|---|---|
 | `OIDC_<NAME>_DISPLAY_NAME` | Метка на кнопке входа | Нет | имя провайдера |
-| `OIDC_<NAME>_DISCOVERY_URL` | URL OIDC well-known (`/.well-known/openid-configuration`) | Да (или задайте endpoint-overrides) | — |
+| `OIDC_<NAME>_DISCOVERY_URL` | URL OIDC well-known (`/.well-known/openid-configuration`) | Да (или задайте эндпоинт-overrides) | — |
 | `OIDC_<NAME>_CLIENT_ID` | Client ID в IdP | Да | — |
 | `OIDC_<NAME>_CLIENT_SECRET` | Client Secret | Да | — |
 | `OIDC_<NAME>_SCOPES` | Запрашиваемые scopes (через пробел) | Нет | `openid profile email` |
 | `OIDC_<NAME>_AUTO_PROVISION` | Автосоздание пользователей при первом входе | Нет | `true` |
 | `OIDC_<NAME>_TRUST_EMAIL` | Доверять email из IdP как верифицированному, даже если `email_verified` отсутствует в токене. Обязательна для IdP, не эмитирующих это поле (например, Microsoft Entra ID / Azure AD v2) | Нет | `false` |
-| `OIDC_<NAME>_AUTH_URL` | Переопределение authorization endpoint | Нет | из discovery |
-| `OIDC_<NAME>_TOKEN_URL` | Переопределение token endpoint | Нет | из discovery |
+| `OIDC_<NAME>_AUTH_URL` | Переопределение authorization эндпоинт | Нет | из discovery |
+| `OIDC_<NAME>_TOKEN_URL` | Переопределение token эндпоинт | Нет | из discovery |
 | `OIDC_<NAME>_JWKS_URL` | Переопределение jwks_uri | Нет | из discovery |
 | `OIDC_<NAME>_ISSUER` | Переопределение issuer | Нет | из discovery |
 | `OIDC_<NAME>_END_SESSION_URL` | Переопределение end_session_endpoint | Нет | из discovery |
 
-**Разрешение endpoints**: явный override > discovery document > ошибка при старте.
+**Разрешение эндпоинты**: явный override > discovery document > ошибка при старте.
 
 ### Идентификация пользователей
 
@@ -192,7 +192,7 @@ KEYCLOAK_CLIENT_SECRET=<из Keycloak>
 
 ### Split-network (Docker/K8s)
 
-Если backend ходит к Keycloak по internal service-name, а браузер — по публичному FQDN, и OIDC discovery возвращает internal URL, переопределите endpoints явно:
+Если backend ходит к Keycloak по internal service-name, а браузер — по публичному FQDN, и OIDC discovery возвращает internal URL, переопределите эндпоинты явно:
 
 ```ini
 KEYCLOAK_JWKS_URL=https://keycloak.example.com/realms/securityhub/protocol/openid-connect/certs

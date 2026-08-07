@@ -28,7 +28,7 @@ Security Hub и сопутствующие сервисы настраивают
 
 При `APP_ENV=production` (Hub) и `DOMAINSCOPE_ENV=production` (DomainScope) включаются дополнительные проверки:
 
-- секрет-несущие URL (Keycloak, Jira, SARIF endpoint, Hub Scope API, NetBox, Metabase, dual-verify) обязаны использовать `https://` — иначе старт падает (если не выставлен явный `*_INSECURE` / `*_ALLOW_HTTP`);
+- секрет-несущие URL (Keycloak, Jira, SARIF эндпоинт, Hub Scope API, NetBox, Metabase, dual-verify) обязаны использовать `https://` — иначе старт падает (если не выставлен явный `*_INSECURE` / `*_ALLOW_HTTP`);
 - обязательные секреты (`JWT_SECRET`, `DB_PASSWORD`, `KEYCLOAK_CLIENT_SECRET` при SSO) должны быть заданы, иначе fatal.
 
 ## API-документация

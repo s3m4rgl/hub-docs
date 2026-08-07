@@ -44,7 +44,7 @@ kubectl get nodes          # дождитесь STATUS=Ready
 
 Traefik ingress идёт в комплекте с k3s — отдельно ставить не нужно.
 
-## 2. Фикс DNS для CoreDNS
+## 2. Настройка DNS для CoreDNS
 
 Если нода использует systemd-resolved (типично для Ubuntu/Debian),
 `/etc/resolv.conf` указывает на stub `127.0.0.53`, недостижимый из подов.
@@ -52,7 +52,7 @@ CoreDNS по умолчанию форвардит на него → поды н
 найдёт цели**. Проверка:
 
 ```bash
-grep 127.0.0.53 /etc/resolv.conf && echo "нужен фикс DNS"
+grep 127.0.0.53 /etc/resolv.conf && echo "требуется настройка DNS"
 ```
 
 Перенаправьте CoreDNS на публичный DNS (для сканирования внешнего периметра)
@@ -143,12 +143,41 @@ kubectl -n hub logs -f deploy/hub-domainscope-domainscope -c domainscope
 В логе появятся `scanning ip` → `open port` → `sarif report uploaded`. Найденные
 открытые порты example.com — в Hub UI, продукт `example.com`, раздел Findings.
 
-## Соответствие шагов и install.sh
+## Соответствие шагов и установщика
 
-| Шаг | Флаг install.sh |
-|-----|-----------------|
-| 1. k3s | автоматически (или `--skip-k3s`) |
-| 2. DNS-фикс | автоматически (`--dns "<ip...>"` / `--no-dns-fix`) |
-| 3. helm | автоматически |
-| 4. cert-manager | по `--tls` (пропускается при `--tls disabled`) |
-| 5. hub-platform | `--values`, `--domain`, `--tls` |
+| Шаг | Что делает `install.sh` |
+| --- | --- |
+| 1. k3s | Ставит сам, если ещё не установлен. Отдельного флага для пропуска нет |
+| 2. Исправление DNS | Делает сам. Резолверы задаются флагом `--dns "<ip> [ip…]"`, отключается флагом `--no-dns-fix` |
+| 3. helm | Ставит сам |
+| 4. cert-manager | Ставит по значению `--tls`; пропускается флагом `--skip-cert-manager` |
+| 5. hub-platform | Разворачивает с учётом `--domain`, `--tls`, `--values`, `--ingress`, `--release` |
+
+### Все флаги установщика
+
+| Флаг | Назначение |
+| --- | --- |
+| `--domain <имя>` | Публичное имя хоста, по которому открывается Hub |
+| `--tls <режим>` | `disabled`, `selfsigned` или `letsencrypt` |
+| `--le-email <адрес>` | Обязателен при `--tls letsencrypt` — без него установщик прерывается |
+| `--ingress <класс>` | Контроллер входящего трафика: Traefik идёт с k3s, nginx ставится отдельно |
+| `--values <файл>` | Дополнительный файл значений. Флаг повторяемый; применяется **до** внутренних переопределений |
+| `--wg-values <файл>` | Значения для egress через WireGuard |
+| `--release <имя>` | Имя релиза Helm |
+| `--dns "<ip> [ip…]"` | Резолверы для CoreDNS. По умолчанию `1.1.1.1 8.8.8.8`; задайте свои, если сканируете внутреннюю инфраструктуру |
+| `--no-dns-fix` | Не трогать CoreDNS — если DNS в кластере уже настроен |
+| `--skip-cert-manager` | Не ставить cert-manager |
+| `--help` | Справка |
+
+Те же значения можно передать переменными окружения: `DOMAIN`, `TLS_MODE`,
+`LE_EMAIL`, `INGRESS_CLASS`, `RELEASE`, `NAMESPACE`, `WG_VALUES`,
+`DNS_UPSTREAMS`, `DNS_FIX`.
+
+Примеры:
+
+```bash
+sudo ./install.sh --domain hub.example.com --tls letsencrypt --le-email admin@example.com
+sudo ./install.sh --ingress nginx --tls selfsigned
+sudo ./install.sh --domain hub.poc.local --values charts/hub-platform/values-poc.yaml
+sudo ./install.sh --dns "10.0.0.53 10.0.0.54"
+```

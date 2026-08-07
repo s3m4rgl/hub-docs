@@ -6,7 +6,7 @@
 
 ## Предусловия
 
-- Виртуалка/железо по требованиям из [`prerequisites.md`](prerequisites.md)
+- Виртуалка/железо по требованиям из [Требования](prerequisites.md)
 - Docker Engine 24+ и Docker Compose v2.20+ (`docker compose version`)
 - 30+ ГБ свободного диска
 - Доступ к публичному Docker registry (или внутреннему зеркалу)
@@ -58,7 +58,7 @@ APP_ENV=production
 
 > **WARNING:** дефолтные значения `JWT_SECRET` и `LOCAL_ADMIN_PASSWORD` из шаблона **не использовать в продакшене** — задайте свои случайные значения.
 
-Полный справочник переменных: [`configuration.md`](configuration.md).
+Полный справочник переменных: [Конфигурация: обзор и соглашения](configuration.md).
 
 ## 3. Pull образов и запуск
 
@@ -158,7 +158,7 @@ server {
 
 ### Запуск Keycloak (SSO)
 
-Базовый стек работает в режиме локальной аутентификации (`AUTH_MODE=LOCAL`), Keycloak не требуется. Если нужен SSO — поднимите Keycloak отдельно и переключите `AUTH_MODE`; настройка realm/client и переменных описана в [`integration-sso.md`](integration-sso.md).
+Базовый стек работает в режиме локальной аутентификации (`AUTH_MODE=LOCAL`), Keycloak не требуется. Если нужен SSO — поднимите Keycloak отдельно и переключите `AUTH_MODE`; настройка realm/client и переменных описана в [Вход через SSO и OIDC](integration-sso.md).
 
 ## 7. Управление
 
@@ -211,7 +211,7 @@ docker compose up -d
 docker compose restart backend
 ```
 
-Миграции БД применяются автоматически при старте backend. Подробнее: [`upgrades.md`](upgrades.md).
+Миграции БД применяются автоматически при старте backend. Подробнее: [Обновления](upgrades.md).
 
 ## Типовые проблемы
 
@@ -223,4 +223,4 @@ docker compose restart backend
 | Миграции не применяются | Проверьте `DB_*` env vars; ошибки в backend-логах                                 |
 | `docker pull denied`    | Не залогинены в registry. `docker login <registry>`                               |
 
-Полный troubleshooting: [`troubleshooting.md`](troubleshooting.md).
+Полный troubleshooting: [Диагностика](troubleshooting.md).

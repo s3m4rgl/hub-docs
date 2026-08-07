@@ -243,7 +243,7 @@ domainscope:
 - Hub JWT secret
 - Hub local admin password
 - DomainScope DB password
-- DomainScope Hub API token (из Service Account Hub, см. [`integration-sarif.md`](integration-sarif.md))
+- DomainScope Hub API token (из Service Account Hub, см. [Загрузка отчётов внешних сканеров](integration-sarif.md))
 - Keycloak client secret (если SSO)
 - LLM API key (если AI-триаж)
 - Jira bot password / token (если интеграция)
@@ -287,7 +287,7 @@ helm upgrade hub /opt/hub-charts-new/hub-platform -n hub -f values.yaml
 kubectl -n hub rollout restart deploy
 ```
 
-Подробнее: [`upgrades.md`](upgrades.md).
+Подробнее: [Обновления](upgrades.md).
 
 
 Состав компонентов и что из них обязательно — [Архитектура](architecture.md).

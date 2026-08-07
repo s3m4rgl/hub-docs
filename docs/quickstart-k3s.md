@@ -34,7 +34,7 @@ cat /proc/sys/fs/binfmt_misc/qemu-x86_64
 ```
 
 Под эмуляцией сканер должен использовать nmap **connect-скан** (без raw-сокетов) —
-это уже задано в `values-poc.yaml` (`domainscope.env.scanType: connect`).
+это уже задано в `values-poc.yaml` (`domainscope.domainscope.env.scanType: connect`).
 
 ### Опционально: зеркало Docker Hub (медленный/ограниченный канал)
 

@@ -184,11 +184,11 @@ zap sarif upload failed — находки НЕ доставлены в Hub  err
 Сканер находит уязвимости, но загрузка SARIF возвращает **404**. `page not found` — это
 ответ Hub на **несматченный маршрут**, почти всегда это misconfig, а НЕ отсутствие ресурса:
 
-1. **`*_SARIF_API_ENDPOINT` содержит `/api/v1`.** Endpoint должен быть **корнем Hub**
+1. **`*_SARIF_API_ENDPOINT` содержит `/api/v1`.** Эндпоинт должен быть **корнем Hub**
    (`https://hub.example.com`), клиент сам дописывает `/api/v1/products/<id>/reports`.
    С хвостом `/api/v1` путь удваивается → 404. *(Клиент DomainScope **НЕ** стрипает
    хвостовой `/api/v1` — он строит URL через `url.JoinPath(baseURL, "/api/v1/products/...")`,
-   поэтому endpoint обязан быть корнем без `/api/v1`. Любой хвост `/api/v1` в endpoint'е
+   поэтому эндпоинт обязан быть корнем без `/api/v1`. Любой хвост `/api/v1` в эндпоинте
    приведёт к удвоению пути и 404.)*
 2. **`*_SARIF_PRODUCT_ID` пустой или указывает на несуществующий в Hub продукт.**
    В Helm проверьте, что `sarifProductId` зарезолвился (umbrella прокидывает UUID
@@ -220,7 +220,7 @@ nginx.ingress.kubernetes.io/proxy-body-size: 200m
 
 ### `422 Unprocessable Entity: limit exceeded`
 
-SARIF превысил один из hard-лимитов (см. [ 112 ](integration-sarif.md)):
+SARIF превысил один из hard-лимитов (см. [Загрузка отчётов внешних сканеров](integration-sarif.md)):
 
 - Разбейте отчёт на несколько (несколько runs в разных файлах)
 - Уменьшите количество results (фильтр на стороне сканера)
@@ -242,11 +242,11 @@ ORDER BY COUNT(*) DESC;
 
 ### Severity всегда INFO
 
-Сканер не выставляет `level` / `properties.severity` — выставьте поле в SARIF на стороне сканера (см. [ 117 ](integration-sarif.md)).
+Сканер не выставляет `level` / `properties.severity` — выставьте поле в SARIF на стороне сканера (см. [Загрузка отчётов внешних сканеров](integration-sarif.md)).
 
 ### `500 Internal Server Error — Failed to save file` при upload
 
-В отличие от 404 (misconfig endpoint), 500 «Failed to save file» означает, что
+В отличие от 404 (misconfig эндпоинт), 500 «Failed to save file» означает, что
 запрос **дошёл** до Hub, но backend не смог записать файл отчёта на диск:
 
 - **PVC переполнен (ENOSPC).** Backend пишет отчёты в `STORAGE_PATH`
@@ -297,7 +297,7 @@ kubectl -n kube-system get cm coredns -o jsonpath='{.data.Corefile}' | grep forw
 
 `install.sh` чинит это автоматически (флаг `--dns "<ip...>"` для своих
 резолверов, `--no-dns-fix` чтобы не трогать). Вручную — см.
-[ручную установку](deploy-k3s-manual.md), шаг «Фикс DNS».
+[ручную установку](deploy-k3s-manual.md), шаг «Настройка DNS».
 
 > Для сканирования **внутренней** инфраструктуры (split-horizon DNS) укажите
 > внутренние резолверы: `--dns "10.0.0.53 10.0.0.54"`.
@@ -510,8 +510,8 @@ docker compose exec postgres psql -U securityhub -d securityhub -c \
 
 ## Связанные документы
 
-- [ 185 ](operations.md) — backup, мониторинг
-- [ 186 ](upgrades.md) — rollback при неудачном обновлении
+- [Эксплуатация](operations.md) — backup, мониторинг
+- [Обновления](upgrades.md) — rollback при неудачном обновлении
 
 
 ## Если это не неисправность

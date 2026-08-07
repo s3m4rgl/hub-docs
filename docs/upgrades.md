@@ -192,7 +192,7 @@ docker compose pull
 docker compose up -d
 ```
 
-Совместимость API между Hub и DomainScope: оба сервиса используют публичные REST endpoints Hub (`/api/v1/products/<id>/reports` и `/api/v1/projects/<id>/scope/proposals`). При major-bump поставщик отмечает в release notes изменения контракта, если они есть.
+Совместимость API между Hub и DomainScope: оба сервиса используют публичные REST эндпоинты Hub (`/api/v1/products/<id>/reports` и `/api/v1/projects/<id>/scope/proposals`). При major-bump поставщик отмечает в release notes изменения контракта, если они есть.
 
 ## Frontend и backend совместимость
 
@@ -235,5 +235,5 @@ Major-upgrade обычно требует:
 
 ## Связанные документы
 
-- [`operations.md`](operations.md) — backup перед обновлением
-- [`troubleshooting.md`](troubleshooting.md) — если что-то пошло не так
+- [Эксплуатация](operations.md) — backup перед обновлением
+- [Диагностика](troubleshooting.md) — если что-то пошло не так

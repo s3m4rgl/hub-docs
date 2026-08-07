@@ -67,7 +67,7 @@ DOMAINSCOPE_SARIF_IP_SCOPE=public      # all / public / private
 POSTGRES_PASSWORD=<strong-password>
 ```
 
-> **Service Account в Hub**: до старта DomainScope создайте Service Account в Hub (см. [`integration-sarif.md`](integration-sarif.md)) с permission на нужный project/product. Скопируйте API key — это `DOMAINSCOPE_HUB_API_TOKEN`.
+> **Service Account в Hub**: до старта DomainScope создайте Service Account в Hub (см. [Загрузка отчётов внешних сканеров](integration-sarif.md)) с permission на нужный project/product. Скопируйте API key — это `DOMAINSCOPE_HUB_API_TOKEN`.
 
 ### 3. Запуск
 
@@ -110,7 +110,7 @@ curl http://127.0.0.1:8080/ready
 
 ## Способ 2: Kubernetes
 
-DomainScope включён в umbrella-чарт `hub-platform` (см. [`deploy-kubernetes.md`](deploy-kubernetes.md)).
+DomainScope включён в umbrella-чарт `hub-platform` (см. [Развёртывание в Kubernetes](deploy-kubernetes.md)).
 
 В `values.yaml`:
 
@@ -179,7 +179,7 @@ DOMAINSCOPE_ZAP_INSTANCES_JSON=[{"url":"http://zap-1:8090","api_key":"<из се
 
 ### NetBox
 
-См. [`domainscope-netbox.md`](domainscope-netbox.md). Включается:
+См. [DomainScope и NetBox](domainscope-netbox.md). Включается:
 
 ```ini
 DOMAINSCOPE_NETBOX_ENABLED=true
@@ -236,7 +236,7 @@ sudo rm -rf /opt/domainscope
 
 ## Manual rescan webhook (опционально)
 
-Если на Hub'e включена функция [«Перепроверить»](manual-rescan.md), DomainScope может принимать webhook'и от Hub'a и запускать ре-скан по запросу оператора. Без `RESCAN_API_KEY` в окружении этот сервер не стартует.
+Если на Hub'e включена функция [«Перепроверить»](manual-rescan.md), DomainScope может принимать обращения от Hub'a и запускать ре-скан по запросу оператора. Без `RESCAN_API_KEY` в окружении этот сервер не стартует.
 
 Переменные окружения DomainScope:
 
@@ -267,7 +267,7 @@ curl http://localhost:8087/healthz
 
 ## Связанные документы
 
-- [`domainscope-scanners.md`](domainscope-scanners.md) — управление сканерами
-- [`domainscope-netbox.md`](domainscope-netbox.md) — NetBox sync
-- [`domainscope-trails.md`](domainscope-trails.md) — discovery trails
-- [`manual-rescan.md`](manual-rescan.md) — UI-кнопки «Перепроверить» и автозакрытие
+- [Управление сканерами DomainScope](domainscope-scanners.md) — управление сканерами
+- [DomainScope и NetBox](domainscope-netbox.md) — NetBox sync
+- [Происхождение записей периметра](domainscope-trails.md) — discovery trails
+- [Ручная перепроверка](manual-rescan.md) — UI-кнопки «Перепроверить» и автозакрытие

@@ -77,7 +77,7 @@ sudo setcap cap_net_raw+ep /usr/local/bin/domain-scope
 
 **Что делает:**
 
-- Берёт все обнаруженные HTTP/HTTPS endpoints (порты 80, 443, 8080, 8443 и любые с HTTP-fingerprint)
+- Берёт все обнаруженные HTTP/HTTPS эндпоинты (порты 80, 443, 8080, 8443 и любые с HTTP-fingerprint)
 - Прогоняет встроенный nuclei с подключёнными templates
 - Каждое срабатывание (info/low/medium/high/critical) → SARIF находка
 
@@ -150,9 +150,9 @@ DOMAINSCOPE_OPENVAS_IP_SCOPE=public
 
 **Что делает:**
 
-- Для каждого endpoint с HTTPS-портом запрашивает certificate
+- Для каждого эндпоинт с HTTPS-портом запрашивает certificate
 - Извлекает: issuer, subject, SAN, expiry date, signature algo
-- Генерит находки:
+- Формирует находки:
   - `LOW` — cert expires in 30 days (`DOMAINSCOPE_TLSX_CERT_EXPIRY_DAYS`)
   - `MEDIUM` — cert expires in 7 days
   - `HIGH` — cert expired
@@ -292,9 +292,9 @@ DOMAINSCOPE_TIME_LOOP_NUCLEI=180
 
 - Subfinder: ~10 KB на seed-домен
 - Nmap: ~100 KB на IP (SYN-scan)
-- Nuclei: ~5-20 MB на endpoint (зависит от templates)
+- Nuclei: ~5-20 MB на эндпоинт (зависит от templates)
 - OpenVAS: ~10-50 MB на IP
-- ZAP active scan: ~50-200 MB на endpoint
+- ZAP active scan: ~50-200 MB на эндпоинт
 
 ### Rate limits
 
@@ -324,5 +324,5 @@ LIMIT 20;
 
 ## Связанные документы
 
-- [ 88 ](domainscope-netbox.md) — NetBox sync
-- [ 89 ](domainscope-trails.md) — discovery trails
+- [DomainScope и NetBox](domainscope-netbox.md) — NetBox sync
+- [Происхождение записей периметра](domainscope-trails.md) — discovery trails
