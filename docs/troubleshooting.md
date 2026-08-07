@@ -97,9 +97,9 @@ Bot не имеет permission `Create Issue` в нужном `project_key`. П�
 
 ### `Transition not allowed`
 
-`initial_transition_chain` или `auto_verify_transition` пытается перевести по статусу, недоступному в workflow. Проверьте Project → Workflow в Jira UI — какие переходы разрешены из текущего статуса.
+`initial_transition_chain` пытается перевести задачу по статусу, недоступному в текущем процессе Jira. Посмотрите Project → Workflow в интерфейсе Jira: какие переходы разрешены из статуса, в котором задача оказалась после создания.
 
-### Reverse-sync не работает
+### Перенос статуса из Jira не работает
 
 ```bash
 docker compose logs worker | grep jira_reverse_sync

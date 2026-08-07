@@ -109,7 +109,7 @@ https://hub.example.com/swagger/index.html
 
 (локально — `http://localhost:8082/swagger/index.html`). Удобно для отладки интеграций и проверки контрактов.
 
-## 5. Reverse proxy и TLS (production)
+## 5. Обратный прокси и TLS
 
 Compose стек слушает на голых портах. Для production поставьте перед ним nginx/traefik/caddy с TLS.
 

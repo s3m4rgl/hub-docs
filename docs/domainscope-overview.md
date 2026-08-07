@@ -172,7 +172,7 @@ DOMAINSCOPE_TLSX_ENABLED=true
 DOMAINSCOPE_ZAP_ENABLED=true
 ```
 
-## Health checks
+## Проверки состояния
 
 DomainScope экспонирует HTTP endpoints (если `DOMAINSCOPE_HEALTH_ENABLED=true`):
 

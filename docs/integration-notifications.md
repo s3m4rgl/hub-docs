@@ -1,200 +1,200 @@
 # Уведомления
 
-Hub шлёт уведомления при появлении / переоткрытии / повышении severity findings. Поддерживаются два канала: **Mattermost** (incoming webhook) и **Telegram** (bot API). Конфигурация per-project — в UI Hub, без перезапуска.
+Hub оповещает о событиях с находками по четырём каналам: **Telegram**,
+**Mattermost**, **MAX** и **электронная почта**. Каналы включаются независимо
+и настраиваются на уровне проекта — у разных проектов могут быть разные
+получатели.
 
-## Архитектура
+## Как это устроено
 
+```mermaid
+flowchart TD
+    Event["Событие с находкой"]
+    Disp["Диспетчер событий"]
+
+    subgraph Channels["Очереди доставки"]
+        TG["Telegram"]
+        MM["Mattermost"]
+        MX["MAX"]
+        EM["Почта"]
+    end
+
+    Plugin["Плагин telegram-notifier"]
+    Ext["Внешние сервисы"]
+
+    Event --> Disp
+    Disp --> |"отбор по каналу,<br/>критичности и событию"| TG
+    Disp --> MM
+    Disp --> MX
+    Disp --> EM
+    TG --> Plugin
+    Plugin --> Ext
+    MM --> Ext
+    MX --> Ext
+    EM --> Ext
+
+    classDef hub fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#111827
+    classDef ext fill:#f3f4f6,stroke:#9ca3af,stroke-width:1px,stroke-dasharray:4 3,color:#111827
+    class Disp,TG,MM,MX,EM,Plugin hub
+    class Event,Ext ext
 ```
-   Event (new finding / renewed / severity_increased)
-        │
-        ▼
-   Dispatcher worker
-        │
-        ├─ Читает notification rules проекта (UI Hub)
-        ├─ Фильтрует по min_severity, event_types, tags
-        ├─ Для каждого канала кладёт job в свою очередь
-        │
-        ▼
-   ┌─────────────────────┐    ┌─────────────────────┐
-   │ Telegram worker     │    │ Mattermost worker   │
-   │ TELEGRAM_NOTIFI...  │    │ MATTERMOST_NOTIFI.. │
-   └──────────┬──────────┘    └──────────┬──────────┘
-              │ HTTPS                    │ HTTPS
-              ▼                          ▼
-        Telegram Bot API           Mattermost incoming webhook
-```
 
-## Env vars
+Диспетчер получает событие, для каждого канала проверяет: включён ли канал,
+проходит ли критичность находки порог и подписан ли канал на этот тип события.
+Прошедшие проверку задачи расходятся по отдельным очередям — сбой одного
+канала не задерживает остальные.
 
-| Переменная                        | Default                 | Описание                                               |
-| --------------------------------- | ----------------------- | ------------------------------------------------------ |
-| `DISPATCHER_WORKERS`              | `10`                    | Параллелизм dispatcher (разводит события по каналам)   |
-| `TELEGRAM_NOTIFICATION_WORKERS`   | `5`                     | Воркеры отправки в Telegram                            |
-| `MATTERMOST_NOTIFICATION_WORKERS` | `10`                    | Воркеры отправки в Mattermost                          |
-| `NOTIFICATIONS_DRY_RUN`           | `false`                 | Если `true` — логирует, но не шлёт. Полезно для тестов |
-| `FRONTEND_BASE_URL`               | `http://localhost:3000` | Префикс для deep-links в сообщениях                    |
+## События
 
-## Event types
+| Событие | Когда возникает |
+| --- | --- |
+| `new` | Появилась новая находка |
+| `renewed` | Ранее закрытая находка обнаружена снова |
+| `severity_increased` | Критичность выросла — например, с `MEDIUM` на `HIGH` |
+| `needs_review` | Находка вернулась на пересмотр: истёк срок принятия риска или ожидания |
+| `fixed` | Находка закрыта как исправленная |
+| `sla_at_risk` | Срок устранения приближается |
+| `sla_breached` | Срок нарушен |
+| `sla_breached_escalated` | Нарушение срока эскалировано |
 
-Уведомления летят при следующих событиях:
+## Общие настройки канала
 
-| Событие              | Когда                                                           |
-| -------------------- | --------------------------------------------------------------- |
-| `new`                | Создан новый finding (после первой загрузки SARIF)              |
-| `renewed`            | Finding с `fixed` статусом снова появился в отчёте              |
-| `severity_increased` | Severity изменилась в большую сторону (например, MEDIUM → HIGH) |
+У всех каналов есть общий набор полей:
 
-Подписка на event type настраивается в UI Hub: Project → Notifications → New rule.
+| Поле | Назначение |
+| --- | --- |
+| `enabled` | Включён ли канал |
+| `min_severity` | Порог критичности: находки ниже не отправляются |
+| `fixed_min_severity` | Отдельный порог для сообщений об исправлении |
+| `notify_on_close` | Сообщать ли о закрытии находок |
+
+Пороги раздельные не случайно: обычно об открытии проблемы хотят знать шире,
+чем о её закрытии.
 
 ## Telegram
 
+!!! warning "Telegram работает через плагин"
+
+    Доставка в Telegram выполняется плагином `telegram-notifier`. **Если он не
+    установлен, уведомления в Telegram просто не отправляются** — без ошибки,
+    только запись в журнале с уровнем отладки. Если плагин установлен, но
+    выключен администратором, в журнале появляется отдельное сообщение об
+    этом.
+
+    Сначала установите плагин — см. [Плагины](plugins.md), — и только потом
+    настраивайте канал в проекте.
+
 ### 1. Создать бота
 
-Через [@BotFather](https://t.me/BotFather):
+Через `@BotFather` в Telegram: команда `/newbot`, затем имя и имя
+пользователя бота. BotFather выдаст токен вида `7123456789:AAH…`.
 
-```
-/newbot
-Имя: SecurityHub Bot
-Username: securityhub_company_bot
-```
+### 2. Узнать идентификатор чата
 
-BotFather выдаст токен вида `7123456789:AAH...` — это `bot_token`.
-
-### 2. Получить chat_id
-
-**Личное сообщение боту:** напишите боту `/start`, затем:
+Напишите боту `/start`, затем:
 
 ```bash
-curl https://api.telegram.org/bot<TOKEN>/getUpdates | jq '.result[].message.chat'
+curl "https://api.telegram.org/bot<ТОКЕН>/getUpdates" | jq '.result[].message.chat'
 ```
 
-Возьмите `id` (положительное число для личных, отрицательное для групп).
+Возьмите `id`: положительное число — личная переписка, отрицательное —
+группа. Для канала добавьте бота в него с правами администратора; тогда
+идентификатор начнётся с `-100`.
 
-**Канал/группа:** добавьте бота в канал (нужны admin-права в канале); затем тот же запрос — `chat_id` будет начинаться с `-100`.
+### 3. Настроить канал в проекте
 
-### 3. Настроить в Hub
+Настройки задаются в разделе плагинов проекта: токен бота (`bot_token`),
+идентификатор чата (`chat_id`), пороги критичности. Токен — секрет, в ответах
+API он не возвращается.
 
-UI Hub: Project → Notifications → Add channel → Telegram:
-
-- **Bot token:** `7123456789:AAH...`
-- **Chat ID:** `-1001234567890`
-- **Min severity:** `INFO` / `LOW` / `MEDIUM` / `HIGH` / `CRITICAL`
-- **Event types:** ☑ new ☑ renewed ☑ severity_increased
-
-### 4. Проверка
-
-Создайте тестовый finding в Hub (через любой SARIF upload) с severity ≥ `min_severity` правила — сообщение должно прийти. Сбои отправки видны в логах worker.
+Для изменения нужно право `manage_notifications`. Оно даёт доступ к токену
+бота — выдавайте его так же осторожно, как административные права.
 
 ## Mattermost
 
-### 1. Создать incoming webhook в Mattermost
+### 1. Создать входящий webhook
 
-Mattermost UI → Channel → Integrations → Incoming Webhooks → Add:
+В Mattermost: канал → Integrations → Incoming Webhooks → Add. Скопируйте
+адрес вида `https://mattermost.example.com/hooks/xxxxxxxx`.
 
-- Channel: куда слать
-- Username override: `Security Hub`
-- Profile picture override: (опционально, логотип Hub)
+### 2. Настроить в проекте
 
-После создания — скопировать URL вида `https://mattermost.example.com/hooks/xxxxxxxx`.
+Настройки проекта, раздел Mattermost:
 
-### 2. Настроить в Hub
+| Поле | Значение |
+| --- | --- |
+| `webhook_url` | Адрес входящего webhook. **Секрет** |
+| `channel` | Канал, если нужно переопределить заданный в webhook |
+| `min_severity`, `fixed_min_severity`, `notify_on_close` | Пороги и подписка |
 
-UI Hub: Project → Notifications → Add channel → Mattermost:
+## MAX
 
-- **Webhook URL:** `https://mattermost.example.com/hooks/xxxxxxxx`
-- **Min severity:** `MEDIUM`
-- **Event types:** выбрать
+Настройки проекта, раздел MAX:
 
-## Формат сообщений
+| Поле | Значение |
+| --- | --- |
+| `access_token` | Токен бота. **Секрет** |
+| `chat_id` | Идентификатор чата |
+| `all_members` | Оповещать всех участников |
+| `min_severity`, `fixed_min_severity`, `notify_on_close` | Пороги и подписка |
 
-### Telegram
+## Электронная почта
 
-```
-🔴 [HIGH] SQL Injection in /api/v1/users
-Product: backend-api
-Resource: example.com:443
+В отличие от остальных каналов, параметры SMTP-сервера задаются **на всю
+установку** переменными окружения, а не для каждого проекта:
 
-CWE-89: User input passed unsanitized to SQL query…
+| Переменная | Назначение | По умолчанию |
+| --- | --- | --- |
+| `SMTP_HOST` | Сервер отправки. Пусто — почта не работает | `""` |
+| `SMTP_PORT` | Порт | `587` |
+| `SMTP_USERNAME` | Учётная запись | `""` |
+| `SMTP_PASSWORD` | Пароль | `""` |
+| `SMTP_FROM` | Адрес отправителя | `""` |
+| `SMTP_TLS_MODE` | `starttls` либо прямой TLS | `starttls` |
 
-🔗 https://hub.example.com/findings/abc-123
-```
+Получатели и пороги задаются в настройках проекта. Почтой также
+отправляются оповещения о нарушении сроков и периодические сводки об
+исправленных находках.
 
-### Mattermost
+## Параллелизм и отладка
 
-```markdown
-**🔴 [HIGH] SQL Injection in /api/v1/users**
+| Переменная | Назначение | По умолчанию |
+| --- | --- | --- |
+| `DISPATCHER_WORKERS` | Параллелизм диспетчера событий | `10` |
+| `TELEGRAM_NOTIFICATION_WORKERS` | Отправка в Telegram | `5` |
+| `MATTERMOST_NOTIFICATION_WORKERS` | Отправка в Mattermost | `10` |
+| `MAXRU_NOTIFICATION_WORKERS` | Отправка в MAX | `5` |
+| `EMAIL_NOTIFICATION_WORKERS` | Отправка почты | `5` |
+| `NOTIFICATIONS_DRY_RUN` | Не отправлять по-настоящему, только записывать в журнал | `false` |
+| `FRONTEND_BASE_URL` | Основа для ссылок внутри сообщений | `http://localhost:3000` |
 
-| Поле     | Значение        |
-| -------- | --------------- |
-| Product  | backend-api     |
-| Resource | example.com:443 |
-| Severity | HIGH            |
-| CWE      | CWE-89          |
+Режим без отправки удобен, чтобы проверить пороги и подписки, ничего не
+рассылая: включите `NOTIFICATIONS_DRY_RUN=true`, перезапустите worker и
+посмотрите журнал — там будет то, что было бы отправлено.
 
-[Open in Hub](https://hub.example.com/findings/abc-123)
-```
+## Повторные попытки
 
-## Retry policy
+Неудачная отправка повторяется механизмом очереди задач с нарастающей
+задержкой. Задача, исчерпавшая попытки, остаётся в очереди в состоянии
+ошибки — её видно в разделе фоновых задач, и повтор можно запустить вручную.
 
-При неудачной отправке (timeout / 5xx / Rate limited) Hub ретраит с exponential backoff:
-
-| Попытка | Задержка |
-| ------- | -------- |
-| 1       | 1 минута |
-| 2       | 5 минут  |
-| 3       | 15 минут |
-| 4       | 1 час    |
-| 5       | 6 часов  |
-
-После 5 неудач сообщение помечается как failed. Сбои видны в логах worker.
-
-**Что считается успехом:**
-
-- Telegram: `ok: true` в ответе Bot API
-- Mattermost: HTTP 200
-
-**Что НЕ ретраится:**
-
-- 400/403 — конфигурация-баг, дальше отправлять бесполезно
-- 401 — бот не имеет доступа
-
-## Dry run
-
-Для тестирования настроек без реальной отправки:
-
-```ini
-NOTIFICATIONS_DRY_RUN=true
-```
-
-Hub будет логировать в `worker.log`:
-
-```json
-{
-  "level": "info",
-  "msg": "notification dry_run",
-  "channel": "telegram",
-  "chat_id": "-100123",
-  "text": "..."
-}
-```
-
-После проверки — `NOTIFICATIONS_DRY_RUN=false` + рестарт worker.
-
-## Мониторинг
-
-Состояние и сбои отслеживаются через логи worker'а:
-
-```bash
-docker compose logs -f worker | grep -i notif
-```
+Отсюда следует свойство, которое стоит учитывать: доставка выполняется
+**не менее одного раза**. Если процесс умер после отправки, но до отметки о
+завершении, сообщение придёт повторно. Дубликат сообщения не означает
+дубликат находки.
 
 ## Типовые проблемы
 
-| Симптом                       | Что проверить                                                                 |
-| ----------------------------- | ----------------------------------------------------------------------------- |
-| Уведомления не приходят       | Логи worker — есть ли попытка отправки? Если нет — проверьте правила в UI Hub |
-| Telegram: `400 Bad Request`   | Chat ID правильный? Для каналов нужен формат `-100...`, бот должен быть admin |
-| Telegram: `chat not found`    | Бот не добавлен в канал/группу                                                |
-| Mattermost: `400 Bad Request` | Сломанный JSON. Проверьте webhook URL целиком (с `/hooks/`)                   |
-| Mattermost: `Webhook deleted` | В Mattermost удалили integration. Создайте новый и обновите в Hub             |
-| Все сообщения дублируются     | Проверьте, что worker один (не два процесса)                                  |
+| Симптом | Что проверить |
+| --- | --- |
+| Telegram молчит, в журнале ничего | Плагин `telegram-notifier` не установлен — доставка пропускается без ошибки |
+| Telegram молчит, в журнале запись о выключенном плагине | Плагин установлен, но выключен администратором |
+| Telegram: `chat not found` | Бот не добавлен в группу или канал |
+| Telegram: ошибка запроса для канала | Идентификатор канала должен начинаться с `-100`, бот должен быть администратором |
+| Mattermost: ошибка запроса | Проверьте адрес webhook целиком, вместе с `/hooks/` |
+| Mattermost: webhook удалён | Интеграцию удалили на стороне Mattermost — создайте заново и обновите адрес |
+| Почта не уходит | Не задан `SMTP_HOST`. Проверьте также, что порт и режим TLS соответствуют друг другу |
+| Ничего не приходит ни по одному каналу | Критичность находки ниже `min_severity`, либо канал не подписан на этот тип события |
+| Сообщения приходят повторно | Ожидаемо при сбое доставки: гарантия — «не менее одного раза» |
+
+Записи о доставке ищите в журнале worker по слову `notification`.

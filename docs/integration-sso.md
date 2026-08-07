@@ -79,37 +79,36 @@ SSO_PROVIDERS=keycloak,okta      # Keycloak + Okta
                   └─────────────────┘
 ```
 
-## Сценарий A: Keycloak в одном compose c Hub
+## Сценарий A: Keycloak рядом с Hub
 
-Самый простой для пилотов. Используется `docker-compose-keycloak.yml`.
+!!! note "Провайдера входа в поставке нет"
 
-### Запуск
+    Поставляемый `docker-compose.yml` разворачивает Hub в режиме локальных
+    учётных записей (`AUTH_MODE=LOCAL`) и провайдера входа не поднимает. Если
+    для пилота нужен Keycloak рядом, разверните его самостоятельно — любым
+    привычным способом — и подключите Hub переменными ниже. Дальше по тексту
+    это тот же **сценарий B**, отличается только адресация.
 
-```bash
-docker compose -f docker-compose.yml -f docker-compose-keycloak.yml up -d
-```
-
-Поднимется Keycloak 24.0.5 на порту 8083.
-
-### Настройка realm
-
-После старта Keycloak — настройте realm и client вручную (см. ниже) или используйте скрипт настройки из комплекта поставки (если предоставлен).
-
-Скрипт настройки realm/client может быть в комплекте поставки. Если нет — настройте Keycloak вручную (см. ниже «Что админ настраивает в Keycloak»).
-
-### Hub env vars
+Разверните Keycloak, затем настройте realm и клиент, как описано в
+[сценарии B](#что-админ-настраивает-в-keycloak), и задайте Hub:
 
 ```ini
 AUTH_MODE=SSO
 
-KEYCLOAK_URL=http://keycloak:8083                 # внутренний URL для backend
-KEYCLOAK_PUBLIC_URL=http://localhost:8083         # внешний URL для браузера
+KEYCLOAK_URL=http://keycloak:8080                 # адрес, по которому ходит backend
+KEYCLOAK_PUBLIC_URL=http://localhost:8083         # адрес, куда редиректится браузер
 KEYCLOAK_REALM=securityhub
 KEYCLOAK_CLIENT_ID=security-hub
-KEYCLOAK_CLIENT_SECRET=<скопировать из Keycloak UI: Clients → security-hub → Credentials>
+KEYCLOAK_CLIENT_SECRET=<из Keycloak: Clients → security-hub → Credentials>
 ```
 
 Перезапустите backend: `docker compose restart backend`.
+
+!!! warning "Значение по умолчанию не подойдёт"
+
+    Вне `APP_ENV=development` пустой `KEYCLOAK_CLIENT_SECRET` **и** буквальное
+    значение `change-me` отвергаются одинаково — старт прерывается. Задайте
+    собственный секрет.
 
 ## Сценарий B: внешний Keycloak (production)
 
@@ -136,18 +135,26 @@ KEYCLOAK_CLIENT_SECRET=<скопировать из Keycloak UI: Clients → sec
 
 После создания — закладка `Credentials` → скопировать `Client Secret`.
 
-#### 3. Роли
+#### 3. Роли в Keycloak создавать не нужно
 
-Realm-roles (рекомендуется):
+Роли живут **внутри Hub**, а не в провайдере входа. Перенос ролей или групп
+из провайдера не поддерживается — какие бы роли вы ни завели в realm, на
+права в Hub они не повлияют.
 
-- `admin` — полный доступ
-- `project_owner` — управление проектами и продуктами
-- `security_analyst` — работа с findings
-- `developer` — read + комментарии
-- `viewer` — read-only
-- `auditor` — read-only + экспорт
+Роли Hub:
 
-Маппинг ролей на Hub-permissions делается через Casbin policies в БД Hub.
+| Роль | Что даёт |
+| --- | --- |
+| `admin` | Полный доступ, включая административный раздел |
+| `project_owner` | Управление проектами и продуктами |
+| `security_analyst` | Работа с находками |
+| `developer` | Чтение и комментарии |
+| `viewer` | Только чтение |
+| `auditor` | Только чтение и выгрузка |
+| `user` | Базовая роль |
+
+Роль назначает администратор Hub, либо пользователь запрашивает доступ сам —
+запрос попадает на согласование тому, кто управляет ресурсом.
 
 #### 4. Mappers
 
@@ -170,7 +177,7 @@ kcadm.sh update realms/securityhub -s sslRequired=EXTERNAL
 
 Для dev можно `sslRequired=NONE`, но Hub в `APP_ENV=production` откажется работать с HTTP-Keycloak.
 
-### Hub env vars
+### Переменные окружения Hub
 
 ```ini
 AUTH_MODE=SSO
@@ -269,7 +276,7 @@ Azure AD — обычный OIDC-провайдер. Имя провайдера
 6. **Certificates & secrets** → **New client secret** → скопируйте значение (показывается один раз)
 7. **API permissions**: убедитесь, что есть `openid`, `profile`, `email` (Microsoft Graph — delegated)
 
-### 2. Hub env vars
+### 2. Переменные окружения Hub
 
 > **КРИТИЧНО: `OIDC_AZURE_TRUST_EMAIL=true` обязательна для Azure / Entra ID.**
 >
@@ -298,7 +305,7 @@ OIDC_AZURE_TRUST_EMAIL=true              # ОБЯЗАТЕЛЬНО: Entra ID не
 curl -fs "https://login.microsoftonline.com/<tenant-id>/v2.0/.well-known/openid-configuration" | jq .issuer
 
 # Кнопка «Azure AD» появится на странице логина Hub
-curl -s https://hub.example.com/api/v1/auth/config | jq .providers
+curl -s https://hub.example.com/api/v1/auth/config | jq '.data.providers'
 ```
 
 ---

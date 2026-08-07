@@ -132,7 +132,7 @@ Token будет в формате `nbt_xxxxxxxxxxxxxx`.
 | `discovered_via` | Text     | Какой scanner / источник              |
 | `last_seen`      | DateTime | Последний раз видели в perimeter scan |
 
-## Workflow управления perimeter'ом
+## Порядок управления периметром
 
 Типовая последовательность:
 

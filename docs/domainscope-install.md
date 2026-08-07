@@ -99,7 +99,7 @@ INFO Starting port scan cycle
 INFO SARIF uploaded to https://hub.example.com (results=N)
 ```
 
-### 4. Health-check
+### 4. Проверка состояния
 
 Health-сервер слушает на `:8080` по умолчанию (`DOMAINSCOPE_HEALTH_ADDR`), включается через `DOMAINSCOPE_HEALTH_ENABLED=true`:
 
@@ -218,7 +218,7 @@ docker compose up -d
 
 Указывайте явный тег версии, а не `latest`, и следите, чтобы он существовал у всех компонентов — см. [Обновления](upgrades.md#выбор-версии).
 
-## Backup
+## Резервное копирование
 
 ```bash
 # БД
