@@ -187,5 +187,5 @@ DomainScope экспонирует HTTP эндпоинты (если `DOMAINSCOP
 
 - [Установка DomainScope](domainscope-install.md) — установка
 - [Управление сканерами DomainScope](domainscope-scanners.md) — управление сканерами
-- [DomainScope и NetBox](domainscope-netbox.md) — NetBox sync
+- [Синхронизация с NetBox](domainscope-netbox.md) — NetBox sync
 - [Происхождение записей периметра](domainscope-trails.md) — discovery trails / провенанс

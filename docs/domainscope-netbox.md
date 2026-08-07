@@ -1,4 +1,4 @@
-# DomainScope и NetBox
+# Синхронизация с NetBox
 
 DomainScope умеет двусторонне работать с NetBox:
 

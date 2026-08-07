@@ -179,7 +179,7 @@ DOMAINSCOPE_ZAP_INSTANCES_JSON=[{"url":"http://zap-1:8090","api_key":"<из се
 
 ### NetBox
 
-См. [DomainScope и NetBox](domainscope-netbox.md). Включается:
+См. [Синхронизация с NetBox](domainscope-netbox.md). Включается:
 
 ```ini
 DOMAINSCOPE_NETBOX_ENABLED=true
@@ -268,6 +268,6 @@ curl http://localhost:8087/healthz
 ## Связанные документы
 
 - [Управление сканерами DomainScope](domainscope-scanners.md) — управление сканерами
-- [DomainScope и NetBox](domainscope-netbox.md) — NetBox sync
+- [Синхронизация с NetBox](domainscope-netbox.md) — NetBox sync
 - [Происхождение записей периметра](domainscope-trails.md) — discovery trails
 - [Ручная перепроверка](manual-rescan.md) — UI-кнопки «Перепроверить» и автозакрытие

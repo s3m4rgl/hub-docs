@@ -324,5 +324,5 @@ LIMIT 20;
 
 ## Связанные документы
 
-- [DomainScope и NetBox](domainscope-netbox.md) — NetBox sync
+- [Синхронизация с NetBox](domainscope-netbox.md) — NetBox sync
 - [Происхождение записей периметра](domainscope-trails.md) — discovery trails

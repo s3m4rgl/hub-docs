@@ -92,7 +92,7 @@ nav:
       - Уведомления: integration-notifications.md
       - NetBox: integration-netbox.md
       - AI-триаж и песочница: integration-llm.md
-      - Загрузка SARIF: integration-sarif.md
+      - Загрузка отчётов: integration-sarif.md
       - Плагины: plugins.md
   - DomainScope:
       - Обзор: domainscope-overview.md

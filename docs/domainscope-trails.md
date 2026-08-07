@@ -87,4 +87,4 @@ IP-адреса (`ip_addresses.source`):
 ## Связанные документы
 
 - [Управление сканерами DomainScope](domainscope-scanners.md) — управление сканерами и IP_SCOPE фильтр
-- [DomainScope и NetBox](domainscope-netbox.md) — sync с NetBox
+- [Синхронизация с NetBox](domainscope-netbox.md) — sync с NetBox

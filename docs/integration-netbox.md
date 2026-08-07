@@ -5,7 +5,7 @@ NetBox — IPAM/DCIM, источник правды по IP-адресам, до
 1. **Frontend-ссылки** — IP в карточке находка становятся кликабельными ссылками на поиск в NetBox
 2. **Sync периметра** — Hub импортирует scope entries (IP + домены) из NetBox в проекты
 
-DomainScope тоже работает с NetBox (импорт целей сканирования + экспорт обнаруженных IP). См. [DomainScope и NetBox](domainscope-netbox.md).
+DomainScope тоже работает с NetBox (импорт целей сканирования + экспорт обнаруженных IP). См. [Синхронизация с NetBox](domainscope-netbox.md).
 
 ## Сценарий 1: Frontend-ссылки на NetBox
 
@@ -152,7 +152,7 @@ docker compose exec postgres psql -U securityhub -d securityhub -c \
 - Hub **читает** из NetBox с фильтром `tags: security-scope` (без discovery-тегов)
 - Админ периодически ревьюит `domainscope-discovered` и руками помечает `security-scope`, что подтверждает добавление в перимметр
 
-Подробнее: [DomainScope и NetBox](domainscope-netbox.md).
+Подробнее: [Синхронизация с NetBox](domainscope-netbox.md).
 
 ## SSRF и safety
 
@@ -172,4 +172,4 @@ Hub читает NetBox по URL из БД (per-project). NetBox URL и токе
 
 ## Связанные документы
 
-- [DomainScope и NetBox](domainscope-netbox.md) — sync с DomainScope
+- [Синхронизация с NetBox](domainscope-netbox.md) — sync с DomainScope
