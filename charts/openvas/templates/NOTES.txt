@@ -1,0 +1,42 @@
+{{ .Chart.Name }} установлен как релиз {{ .Release.Name }} в неймспейсе {{ .Release.Namespace }}.
+
+== Web UI (gsad) ==
+{{- if .Values.ingress.enabled }}
+  http{{ if include "chart.tlsEnabled" . }}s{{ end }}://{{ tpl .Values.ingress.host . }}/
+{{- else }}
+  Ingress отключён. Доступ через port-forward:
+    kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "chart.fullname" . }}-gvmd 9392:{{ .Values.service.gsad.port }}
+  затем http://localhost:9392/
+{{- end }}
+
+== GMP API (для DomainScope/клиентов) ==
+  Сервис:   {{ include "chart.fullname" . }}-gvmd:{{ .Values.service.gmp.port }}
+  Логин:    {{ .Values.gvmd.adminUsername }}
+  Пароль:
+    kubectl -n {{ .Release.Namespace }} get secret {{ include "chart.secretsName" . }} -o jsonpath='{.data.adminPassword}' | base64 -d
+
+== Архитектура ==
+  Один Pod, контейнеры общаются через unix-sockets:
+    pg-gvm        — PostgreSQL (только unix-socket)
+    gvmd          — Vulnerability Manager (TCP 9390 + unix /run/gvmd)
+    gsad          — Web API (HTTP 9392, unix-socket к gvmd)
+    redis-server  — VT-кэш для ospd-openvas
+    ospd-openvas  — координатор сканов
+
+  Init-контейнеры копируют feed-data из образов Greenbone в PVC:
+    gpg-data, vulnerability-tests, notus-data, scap-data,
+    cert-bund-data, dfn-cert-data, data-objects, report-formats
+
+== ⚠ Первый старт ==
+  Init-контейнеры скачают ~5GB feed-данных. Это занимает 10-30 минут
+  на хорошем канале. Пока init не закончится — gvmd не стартует.
+  Прогресс:
+    kubectl -n {{ .Release.Namespace }} get pod -l app.kubernetes.io/component=openvas
+    kubectl -n {{ .Release.Namespace }} describe pod -l app.kubernetes.io/component=openvas | grep -A2 "Init Container"
+
+== WireGuard egress ==
+{{- if .Values.wireguard.enabled }}
+  Включён — исходящий scan-traffic идёт через {{ .Values.wireguard.serverEndpoint }}.
+{{- else }}
+  Отключён. Сканы будут уходить через дефолтный gateway кластера.
+{{- end }}

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: domainscope
+description: DomainScope - network reconnaissance and vulnerability scanning (k3s edition)
+type: application
+version: 0.1.0
+appVersion: "latest"

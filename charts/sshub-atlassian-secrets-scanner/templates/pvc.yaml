@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "chart.fullname" . }}-results
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/resource-policy": keep
+spec:
+  accessModes:
+    {{- toYaml .Values.pvc.results.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .Values.pvc.results.size }}
+  {{- with .Values.pvc.results.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+{{- if .Values.pvc.logs.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "chart.fullname" . }}-logs
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/resource-policy": keep
+spec:
+  accessModes:
+    {{- toYaml .Values.pvc.logs.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .Values.pvc.logs.size }}
+  {{- with .Values.pvc.logs.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+{{- end }}

@@ -1,0 +1,28 @@
+apiVersion: v2
+name: hub-platform
+description: Security Hub umbrella — installs hub, scanners, and shared secrets in one shot
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+
+dependencies:
+  - name: security-scan-hub
+    version: "0.1.0"
+    repository: "file://../security-scan-hub"
+    alias: hub
+    condition: hub.enabled
+  - name: domainscope
+    version: "0.1.0"
+    repository: "file://../domainscope"
+    alias: domainscope
+    condition: domainscope.enabled
+  - name: openvas
+    version: "0.1.0"
+    repository: "file://../openvas"
+    alias: openvas
+    condition: openvas.enabled
+  - name: owasp-zap
+    version: "0.1.0"
+    repository: "file://../owasp-zap"
+    alias: zap
+    condition: zap.enabled

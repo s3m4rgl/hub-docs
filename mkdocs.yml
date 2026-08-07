@@ -1,0 +1,104 @@
+site_name: Security Hub — Документация
+site_description: "Управление уязвимостями: консолидация находок сканеров, дедупликация, триаж, сроки устранения и интеграции"
+site_url: https://s3m4rgl.github.io/hub-docs/
+repo_url: https://github.com/s3m4rgl/hub-docs
+repo_name: s3m4rgl/hub-docs
+docs_dir: docs
+
+theme:
+  name: material
+  language: ru
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Тёмная тема
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Светлая тема
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - toc.follow
+    - content.code.copy
+    - search.suggest
+    - search.highlight
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid-src
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  # Юникод-совместимая генерация якорей: со стандартным слагификатором
+  # заголовки кириллицей дают пустые или позиционные якоря, и ссылки вида
+  # `page.md#заголовок` молча ведут не туда.
+  - toc:
+      permalink: true
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+
+plugins:
+  - search:
+      lang: ru
+
+extra_css:
+  - assets/css/diagram-zoom.css
+
+extra_javascript:
+  - assets/js/diagram-zoom.js
+
+nav:
+  - Обзор: index.md
+  - Сценарии применения: use-cases.md
+  - Знакомство с продуктом:
+      - Архитектура: architecture.md
+      - Жизненный цикл находки: findings.md
+      - Расчёт ресурсов: sizing.md
+      - Отказоустойчивость: ha.md
+      - Известные ограничения: limitations.md
+  - Развёртывание:
+      - Требования: prerequisites.md
+      - Быстрый старт на k3s: quickstart-k3s.md
+      - Ручная установка на k3s: deploy-k3s-manual.md
+      - Docker Compose: deploy-compose.md
+      - Kubernetes и Helm: deploy-kubernetes.md
+  - Конфигурация:
+      - Обзор и соглашения: configuration.md
+      - Hub — backend и worker: env-hub.md
+      - Frontend: env-frontend.md
+      - DomainScope: env-domainscope.md
+      - Сканеры: env-scanners.md
+  - Интеграции:
+      - SSO и OIDC: integration-sso.md
+      - Jira: integration-jira.md
+      - Уведомления: integration-notifications.md
+      - NetBox: integration-netbox.md
+      - AI-триаж и песочница: integration-llm.md
+      - Загрузка SARIF: integration-sarif.md
+      - Плагины: plugins.md
+  - DomainScope:
+      - Обзор: domainscope-overview.md
+      - Установка: domainscope-install.md
+      - Управление сканерами: domainscope-scanners.md
+      - Синхронизация с NetBox: domainscope-netbox.md
+      - Происхождение записей: domainscope-trails.md
+  - Справочник и эксплуатация:
+      - REST API: api.md
+      - Эксплуатация: operations.md
+      - Обновления: upgrades.md
+      - Ручная перепроверка: manual-rescan.md
+      - Диагностика: troubleshooting.md

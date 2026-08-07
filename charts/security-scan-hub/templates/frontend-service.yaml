@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "chart.fullname" . }}-frontend
+  labels:
+    app.kubernetes.io/component: frontend
+    {{- include "chart.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/component: frontend
+    {{- include "chart.selectorLabels" . | nindent 4 }}
+  ports:
+  - name: http
+    port: 3000
+    targetPort: 3000
+    protocol: TCP

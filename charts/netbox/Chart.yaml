@@ -1,0 +1,6 @@
+apiVersion: v2
+name: netbox
+description: NetBox IPAM/DCIM tool (k3s edition, deployed at /netbox sub-path)
+type: application
+version: 0.1.0
+appVersion: "latest"

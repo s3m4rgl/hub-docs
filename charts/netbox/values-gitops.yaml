@@ -1,0 +1,17 @@
+## Слой переопределений AVP / Vault для GitOps-сценария.
+
+secrets:
+  create: true
+  existingSecretName: ""
+  secretKey: "<path:kv/data/netbox/prod#secretKey>"
+  superuserPassword: "<path:kv/data/netbox/prod#superuserPassword>"
+  superuserApiToken: "<path:kv/data/netbox/prod#superuserApiToken>"
+  dbPassword: "<path:kv/data/netbox/prod#dbPassword>"
+  redisPassword: "<path:kv/data/netbox/prod#redisPassword>"
+
+ingress:
+  className: nginx
+
+tls:
+  mode: letsencrypt
+  issuer: letsencrypt-prod

@@ -1,0 +1,167 @@
+## sshub-atlassian-secrets-scanner — values для standalone-чарта
+##
+## Два пути развёртывания:
+##   1. Standalone helm install — чарт владеет своим Secret. Оператор задаёт
+##      три внешних PAT (Hub, Jira, Confluence) через secrets.* ниже.
+##   2. GitOps (ArgoCD + Vault AVP) — см. values-gitops.yaml; плейсхолдеры
+##      разрешаются во время sync.
+##
+## Состояние (.state.json, .upload_state.json, очередь SARIF) сохраняется в
+## ReadWriteOnce PVC, общий для всех четырёх CronJob (состояние должно быть видно
+## и сканерам, и загрузчику).
+
+nameOverride: ""
+fullnameOverride: ""
+
+## --- ServiceAccount ---
+##
+## Сканер НЕ обращается к Kubernetes API. Мы создаём отдельный SA с отключённым
+## auto-mount, чтобы скомпрометированный pod не мог использовать токен default-SA
+## для перечисления состояния кластера. Переопределяйте только если ваше окружение
+## принудительно навязывает всем подам конкретный общий SA (например, PSP / OPA политики).
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+## --- Image ---
+##
+## tag намеренно НЕ "latest" по умолчанию. `latest` + IfNotPresent незаметно
+## закрепляет за узлами то, что они закэшировали первым; укажите здесь semver и
+## повышайте его при апгрейдах. Используйте теги sha-<short> из CI, когда нужна
+## точная воспроизводимость.
+image:
+  repository: dexionius/sshub-atlassian-secrets-scanner
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+## --- Secrets (3 уровня разрешения: переопределение оператором > существующий в кластере > "") ---
+##
+## Три токена ниже — внешние PAT, случайная генерация для них НЕ имеет смысла.
+## Пустые значения дают понятную ошибку "required" на этапе шаблонизации, чтобы
+## оператор знал, что заполнить.
+secrets:
+  ## false → чарт пропускает создание Secret (umbrella / внешний владелец предоставит свой)
+  create: true
+  ## Если задано, deployments ссылаются на этот Secret вместо <release>-secrets.
+  existingSecretName: ""
+  ## API-ключ service-account Hub
+  hubToken: ""
+  ## Personal Access Token для Jira
+  jiraToken: ""
+  ## Personal Access Token для Confluence
+  confluenceToken: ""
+
+## --- Нечувствительная конфигурация (передаётся как обычные env-переменные) ---
+config:
+  ## Обязательные:
+  hubUrl: ""                      # https://hub.example.com
+  hubJiraProjectId: ""            # UUID Hub Product, хранящего находки Jira
+  hubConfluenceProjectId: ""      # UUID Hub Product, хранящего находки Confluence
+  jiraUrl: ""                     # https://jira.example.com
+  confluenceUrl: ""               # https://confluence.example.com
+  ## Опциональные / настраиваемые:
+  scanFromDaysAgo: "3"            # начало окна сканирования (N дней назад от сегодня, UTC)
+  scanToDaysAgo: "1"              # конец окна сканирования (1 = по вчерашний день)
+  cleanupMaxAgeDays: "7"          # очистка хранит загруженный SARIF столько дней
+  logDestination: stdout          # stdout | file | both
+  ## TZ для интерпретации расписания cron. Пустое = умолчание кластера (обычно UTC).
+  ## CronJob.spec.timeZone требует k8s ≥ 1.27; на старых кластерах оставьте пустым
+  ## и закладывайте смещения прямо в строку schedule.
+  timeZone: ""
+
+## --- Определения CronJob ---
+##
+## Расписания ниже повторяют исторический bare-metal crontab (см.
+## scans/cron/crontab.txt), чтобы поведение оставалось предсказуемым при
+## миграции нагрузки в k3s. concurrencyPolicy: Forbid не даёт двум сканерам
+## затирать состояние друг друга.
+cronjobs:
+  jira:
+    enabled: true
+    schedule: "15 22 * * *"           # 22:15 UTC = 01:15 МСК
+    suspend: false
+    successfulJobsHistoryLimit: 1
+    failedJobsHistoryLimit: 3
+    activeDeadlineSeconds: 21600      # принудительное завершение через 6 ч
+    backoffLimit: 0
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits:   {cpu: "1",  memory: 512Mi}
+  confluence:
+    enabled: true
+    schedule: "0 22 * * *"            # 22:00 UTC = 01:00 МСК
+    suspend: false
+    successfulJobsHistoryLimit: 1
+    failedJobsHistoryLimit: 3
+    activeDeadlineSeconds: 21600
+    backoffLimit: 0
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits:   {cpu: "1",  memory: 512Mi}
+  upload:
+    enabled: true
+    schedule: "5 7-17 * * *"          # 07:05–17:05 UTC = 10:05–20:05 МСК, ежечасно
+    suspend: false
+    successfulJobsHistoryLimit: 1
+    failedJobsHistoryLimit: 3
+    activeDeadlineSeconds: 1800       # 30 минут
+    backoffLimit: 0
+    resources:
+      requests: {cpu: 50m,  memory: 128Mi}
+      limits:   {cpu: 500m, memory: 256Mi}
+  cleanup:
+    enabled: true
+    schedule: "0 3 * * *"             # 03:00 UTC = 06:00 МСК
+    suspend: false
+    successfulJobsHistoryLimit: 1
+    failedJobsHistoryLimit: 3
+    activeDeadlineSeconds: 600
+    backoffLimit: 0
+    resources:
+      requests: {cpu: 50m,  memory: 64Mi}
+      limits:   {cpu: 200m, memory: 128Mi}
+
+## --- Persistence ---
+##
+## ReadWriteOnce достаточно для k3s + local-path. Если позже станет актуальным
+## мультинодовое планирование, переключитесь на RWX (NFS / longhorn) и пересмотрите
+## семантику блокировок в scan_jira.acquire_lock().
+pvc:
+  results:
+    size: 5Gi
+    storageClassName: ""   # "" = кластерный default storageclass (портируемо); задайте свой для конкретного CSI
+    accessModes: [ReadWriteOnce]
+  logs:
+    ## Создаётся только когда config.logDestination равно "file" или "both".
+    enabled: false
+    size: 1Gi
+    storageClassName: ""   # "" = кластерный default storageclass (портируемо); задайте свой для конкретного CSI
+    accessModes: [ReadWriteOnce]
+
+## --- Security context уровня Pod ---
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+
+## --- Параметры планирования (пробрасываются во все четыре CronJob) ---
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+## --- Дополнительные env (ключ/значение), добавляемые в каждый контейнер CronJob ---
+extraEnv: {}

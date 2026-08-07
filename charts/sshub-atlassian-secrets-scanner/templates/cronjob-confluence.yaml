@@ -1,0 +1,6 @@
+{{- include "chart.cronjob" (dict
+    "ctx"     .
+    "mode"    "confluence"
+    "cfg"     .Values.cronjobs.confluence
+    "jobName" "confluence"
+) }}

@@ -1,0 +1,285 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "chart.fullname" . }}
+  labels:
+    app.kubernetes.io/component: netbox
+    {{- include "chart.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: netbox
+      {{- include "chart.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: netbox
+        {{- include "chart.selectorLabels" . | nindent 8 }}
+    spec:
+      initContainers:
+      - name: wait-for-postgres
+        image: busybox:1.36
+        command:
+        - /bin/sh
+        - -c
+        - |
+          until nc -z {{ include "chart.fullname" . }}-postgres 5432; do
+            echo "waiting for postgres"
+            sleep 5
+          done
+      - name: wait-for-redis
+        image: busybox:1.36
+        command:
+        - /bin/sh
+        - -c
+        - |
+          until nc -z {{ include "chart.fullname" . }}-redis 6379; do
+            echo "waiting for redis"
+            sleep 5
+          done
+      containers:
+      - name: netbox
+        image: {{ .Values.netbox.image.repository }}:{{ .Values.netbox.image.tag }}
+        env:
+        - name: SUPERUSER_NAME
+          value: {{ .Values.netbox.env.superuserName | quote }}
+        - name: SUPERUSER_EMAIL
+          value: {{ .Values.netbox.env.superuserEmail | quote }}
+        - name: SUPERUSER_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.secretsName" . }}
+              key: superuserPassword
+        - name: SUPERUSER_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.secretsName" . }}
+              key: superuserApiToken
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.secretsName" . }}
+              key: secretKey
+        - name: ALLOWED_HOSTS
+          value: {{ .Values.netbox.env.allowedHosts | quote }}
+        - name: DB_HOST
+          value: {{ include "chart.fullname" . }}-postgres
+        - name: DB_PORT
+          value: "5432"
+        - name: DB_NAME
+          value: netbox
+        - name: DB_USER
+          value: netbox
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.secretsName" . }}
+              key: dbPassword
+        - name: REDIS_HOST
+          value: {{ include "chart.fullname" . }}-redis
+        - name: REDIS_PORT
+          value: "6379"
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.secretsName" . }}
+              key: redisPassword
+        - name: REDIS_CACHE_HOST
+          value: {{ include "chart.fullname" . }}-redis
+        - name: REDIS_CACHE_PORT
+          value: "6379"
+        - name: REDIS_CACHE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.secretsName" . }}
+              key: redisPassword
+        - name: FORCE_SCRIPT_NAME
+          value: {{ .Values.netbox.env.forceScriptName | quote }}
+        - name: USE_X_FORWARDED_HOST
+          value: "True"
+        - name: SECURE_PROXY_SSL_HEADER
+          value: "HTTP_X_FORWARDED_PROTO,https"
+        - name: LOGIN_REQUIRED
+          value: {{ .Values.netbox.env.loginRequired | quote }}
+        ports:
+        - containerPort: 8080
+          name: http
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "512Mi"
+          limits:
+            cpu: "1000m"
+            memory: "1Gi"
+        volumeMounts:
+        - mountPath: /opt/netbox/netbox/media
+          name: netbox-media
+        livenessProbe:
+          httpGet:
+            path: /netbox/
+            port: http
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          failureThreshold: 5
+        readinessProbe:
+          httpGet:
+            path: /netbox/
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      volumes:
+      - name: netbox-media
+        persistentVolumeClaim:
+          claimName: {{ include "chart.fullname" . }}-media
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "chart.fullname" . }}-worker
+  labels:
+    app.kubernetes.io/component: netbox-worker
+    {{- include "chart.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: netbox-worker
+      {{- include "chart.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: netbox-worker
+        {{- include "chart.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+      - name: netbox-worker
+        image: {{ .Values.netbox.image.repository }}:{{ .Values.netbox.image.tag }}
+        command: ["/opt/netbox/venv/bin/python", "/opt/netbox/netbox/manage.py", "rqworker"]
+        env:
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.secretsName" . }}
+              key: secretKey
+        - name: DB_HOST
+          value: {{ include "chart.fullname" . }}-postgres
+        - name: DB_PORT
+          value: "5432"
+        - name: DB_NAME
+          value: netbox
+        - name: DB_USER
+          value: netbox
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.secretsName" . }}
+              key: dbPassword
+        - name: REDIS_HOST
+          value: {{ include "chart.fullname" . }}-redis
+        - name: REDIS_PORT
+          value: "6379"
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.secretsName" . }}
+              key: redisPassword
+        - name: REDIS_CACHE_HOST
+          value: {{ include "chart.fullname" . }}-redis
+        - name: REDIS_CACHE_PORT
+          value: "6379"
+        - name: REDIS_CACHE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.secretsName" . }}
+              key: redisPassword
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+        volumeMounts:
+        - mountPath: /opt/netbox/netbox/media
+          name: netbox-media
+      volumes:
+      - name: netbox-media
+        persistentVolumeClaim:
+          claimName: {{ include "chart.fullname" . }}-media
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "chart.fullname" . }}-housekeeping
+  labels:
+    app.kubernetes.io/component: netbox-housekeeping
+    {{- include "chart.labels" . | nindent 4 }}
+spec:
+  schedule: "0 5 * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: housekeeping
+            image: {{ .Values.netbox.image.repository }}:{{ .Values.netbox.image.tag }}
+            command: ["/opt/netbox/venv/bin/python", "/opt/netbox/netbox/manage.py", "housekeeping"]
+            env:
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "chart.secretsName" . }}
+                  key: secretKey
+            - name: DB_HOST
+              value: {{ include "chart.fullname" . }}-postgres
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_NAME
+              value: netbox
+            - name: DB_USER
+              value: netbox
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "chart.secretsName" . }}
+                  key: dbPassword
+            - name: REDIS_HOST
+              value: {{ include "chart.fullname" . }}-redis
+            - name: REDIS_PORT
+              value: "6379"
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "chart.secretsName" . }}
+                  key: redisPassword
+            resources:
+              requests:
+                cpu: "100m"
+                memory: "128Mi"
+              limits:
+                cpu: "500m"
+                memory: "256Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "chart.fullname" . }}
+  labels:
+    app.kubernetes.io/component: netbox
+    {{- include "chart.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/component: netbox
+    {{- include "chart.selectorLabels" . | nindent 4 }}
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080

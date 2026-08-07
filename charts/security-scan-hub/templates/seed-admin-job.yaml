@@ -1,0 +1,154 @@
+{{/*
+  Post-install/upgrade Job — bootstrap для свежей инсталяции хаба.
+
+  Зачем: backend-миграция 00002_seed_data.sql создаёт юзера admin@localhost
+  без password_hash. Built-in seedLocalAdmin() в backend пропускает создание
+  если count(users) > 0. Без этого Job'а нельзя залогиниться через LOCAL auth
+  и нет default-проекта/SA для domainscope.
+
+  Что делает (всё ON CONFLICT DO NOTHING — идемпотентно):
+    1. Ждёт пока backend домигрирует таблицы (users + scan_scope_entries +
+       service_accounts).
+    2. CREATE EXTENSION IF NOT EXISTS pgcrypto — для bcrypt-хеша пароля.
+    3. UPDATE users SET email=admin@localhost.local, password_hash=bcrypt(<pwd>).
+    4. Если включён umbrella-флаг defaultProject:
+       a. INSERT projects (id из master-secret defaultProjectId)
+       b. INSERT scan_scope_entries (project_id, 'domain', <scope>, 'include')
+          по одной записи на каждый domain в строке через запятую.
+       c. INSERT products (id из defaultProductId, project_id)
+       d. INSERT service_accounts + api_keys + service_account_permissions
+          с проектным scope чтения (для domainscope).
+
+  Логин в UI:
+    email: admin@localhost.local
+    password: kubectl -n <ns> get secret <release>-secrets -o jsonpath='{.data.localAdminPassword}' | base64 -d
+
+  pgcrypto's crypt(pwd, gen_salt('bf', 10)) даёт $2a$10$... — bcrypt-формат
+  совместимый с golang.org/x/crypto/bcrypt в backend.
+*/}}
+{{- $dp := default (dict) ((.Values.global | default dict).defaultProject | default .Values.defaultProject) -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "chart.fullname" . }}-seed-admin
+  labels:
+    app.kubernetes.io/component: seed-admin
+    {{- include "chart.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  ttlSecondsAfterFinished: 600
+  ## Жёсткий потолок: если backend так и не домигрировал (реальный сбой, а не
+  ## медленный старт), Job не висит вечно, а падает — helm-hook отдаёт понятную
+  ## ошибку вместо таймаута. 14m < helm --timeout (15m), чтобы причина была видна.
+  activeDeadlineSeconds: 840
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: seed-admin
+        {{- include "chart.selectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+      containers:
+      - name: seed
+        image: {{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}
+        env:
+        - name: PGHOST
+          value: {{ include "chart.fullname" . }}-postgres
+        - name: PGPORT
+          value: "5432"
+        - name: PGUSER
+          value: {{ .Values.postgres.env.postgresUser | quote }}
+        - name: PGDATABASE
+          value: {{ .Values.postgres.env.postgresDb | quote }}
+        - name: PGPASSWORD
+          valueFrom: { secretKeyRef: { name: '{{ include "chart.secretsName" . }}', key: dbPassword } }
+        - name: ADMIN_PASSWORD
+          valueFrom: { secretKeyRef: { name: '{{ include "chart.secretsName" . }}', key: localAdminPassword } }
+        {{- if $dp.enabled }}
+        ## --- Default project / product / SA bootstrap ---
+        - name: DEFAULT_PROJECT_ID
+          valueFrom: { secretKeyRef: { name: '{{ include "chart.secretsName" . }}', key: defaultProjectId, optional: true } }
+        - name: DEFAULT_PRODUCT_ID
+          valueFrom: { secretKeyRef: { name: '{{ include "chart.secretsName" . }}', key: defaultProductId, optional: true } }
+        - name: DEFAULT_SA_ID
+          valueFrom: { secretKeyRef: { name: '{{ include "chart.secretsName" . }}', key: defaultSAId, optional: true } }
+        - name: DEFAULT_SA_KEY_HASH
+          valueFrom: { secretKeyRef: { name: '{{ include "chart.secretsName" . }}', key: defaultSAKeyHash, optional: true } }
+        - name: DEFAULT_SA_KEY_PREFIX
+          valueFrom: { secretKeyRef: { name: '{{ include "chart.secretsName" . }}', key: defaultSAKeyPrefix, optional: true } }
+        - name: PROJECT_NAME
+          value: {{ default "Default" $dp.projectName | quote }}
+        - name: PRODUCT_NAME
+          value: {{ default "default" $dp.productName | quote }}
+        - name: SCAN_SCOPE
+          value: {{ default "" $dp.scope | quote }}
+        {{- end }}
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          echo "Жду пока backend домигрирует таблицы (users / scan_scope_entries / service_accounts)..."
+          for i in $(seq 1 120); do
+            if psql -tAc "SELECT 1 FROM users LIMIT 1; SELECT 1 FROM scan_scope_entries LIMIT 1; SELECT 1 FROM service_accounts LIMIT 1" >/dev/null 2>&1; then
+              echo "ready"; break
+            fi
+            sleep 5
+          done
+          psql -c "CREATE EXTENSION IF NOT EXISTS pgcrypto"
+
+          ## --- Admin user ---
+          ## Переименовать seed-admin'а на валидный email (admin@localhost не валиден).
+          psql -c "UPDATE users SET email = 'admin@localhost.local', updated_at = NOW() WHERE email = 'admin@localhost' AND NOT EXISTS (SELECT 1 FROM users WHERE email = 'admin@localhost.local')"
+          ## SQL-injection защита: ADMIN_PASSWORD — randAlphaNum.
+          psql -c "UPDATE users SET password_hash = crypt('$ADMIN_PASSWORD', gen_salt('bf', 10)), password_changed_at = NOW(), updated_at = NOW() WHERE email = 'admin@localhost.local'"
+
+          ADMIN_UID=$(psql -tAc "SELECT id FROM users WHERE email = 'admin@localhost.local'")
+          if [ -z "$ADMIN_UID" ]; then
+            echo "FATAL: не нашёл admin@localhost.local после UPDATE"; exit 1
+          fi
+          echo "admin UUID: $ADMIN_UID"
+
+          {{- if $dp.enabled }}
+          ## --- Default project ---
+          if [ -n "$DEFAULT_PROJECT_ID" ]; then
+            psql -c "INSERT INTO projects (id, name, description, owner_id, created_at, updated_at) VALUES ('$DEFAULT_PROJECT_ID', '$PROJECT_NAME', 'Default project (seeded by helm install)', '$ADMIN_UID', NOW(), NOW()) ON CONFLICT (id) DO NOTHING"
+
+            ## --- Scope entries (один INSERT на каждый домен в SCAN_SCOPE через запятую) ---
+            if [ -n "$SCAN_SCOPE" ]; then
+              echo "$SCAN_SCOPE" | tr ',' '\n' | while read -r d; do
+                d=$(echo "$d" | xargs) ## trim
+                [ -z "$d" ] && continue
+                psql -c "INSERT INTO scan_scope_entries (project_id, entry_type, value, scope_action, source, created_at) VALUES ('$DEFAULT_PROJECT_ID', 'domain', '$d', 'include', 'manual', NOW()) ON CONFLICT (project_id, entry_type, value, scope_action) DO NOTHING"
+              done
+            fi
+
+            ## --- Default product ---
+            if [ -n "$DEFAULT_PRODUCT_ID" ]; then
+              psql -c "INSERT INTO products (id, project_id, name, description, created_at, updated_at) VALUES ('$DEFAULT_PRODUCT_ID', '$DEFAULT_PROJECT_ID', '$PRODUCT_NAME', 'Default product (seeded by helm install)', NOW(), NOW()) ON CONFLICT (id) DO NOTHING"
+            fi
+
+            ## --- Service Account для domainscope/iac-scanner ---
+            if [ -n "$DEFAULT_SA_ID" ] && [ -n "$DEFAULT_SA_KEY_HASH" ]; then
+              psql -c "INSERT INTO service_accounts (id, name, description, owner_id, is_active, created_at, updated_at) VALUES ('$DEFAULT_SA_ID', 'platform-default-sa', 'Auto-created by helm install (для domainscope/iac-scanner)', '$ADMIN_UID', true, NOW(), NOW()) ON CONFLICT DO NOTHING"
+              psql -c "INSERT INTO api_keys (service_account_id, key_hash, key_prefix, name, is_active, created_at) VALUES ('$DEFAULT_SA_ID', '$DEFAULT_SA_KEY_HASH', '$DEFAULT_SA_KEY_PREFIX', 'platform-default', true, NOW()) ON CONFLICT (key_hash) DO NOTHING"
+              ## Permissions: full доступ к default-проекту + global list_products
+              for SCOPE in upload_report read_findings read_reports list_products; do
+                psql -c "INSERT INTO service_account_permissions (service_account_id, resource_type, resource_id, scope, created_at) VALUES ('$DEFAULT_SA_ID', 'project', '$DEFAULT_PROJECT_ID', '$SCOPE', NOW()) ON CONFLICT DO NOTHING"
+              done
+            fi
+          fi
+          {{- end }}
+
+          echo "Done. Логин: admin@localhost.local / <localAdminPassword>"
+        resources:
+          requests: {cpu: "50m", memory: "32Mi"}
+          limits: {cpu: "200m", memory: "128Mi"}

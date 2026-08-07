@@ -1,0 +1,29 @@
+{{- $sc := .Values.storage.storageClassName -}}
+{{- $pvcs := list
+    (dict "name" "pg-data"      "size" .Values.storage.pgData.size      "comp" "pg-gvm")
+    (dict "name" "gvmd-data"    "size" .Values.storage.gvmdData.size    "comp" "gvmd")
+    (dict "name" "vt-data"      "size" .Values.storage.vtData.size      "comp" "feed-vt")
+    (dict "name" "notus-data"   "size" .Values.storage.notusData.size   "comp" "feed-notus")
+    (dict "name" "scap-data"    "size" .Values.storage.scapData.size    "comp" "feed-scap")
+    (dict "name" "cert-data"    "size" .Values.storage.certData.size    "comp" "feed-cert")
+    (dict "name" "data-objects" "size" .Values.storage.dataObjects.size "comp" "feed-data-objects")
+    (dict "name" "gpg-data"     "size" .Values.storage.gpgData.size     "comp" "gpg-data")
+-}}
+{{- range $i, $p := $pvcs }}
+{{- if $i }}---{{ end }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "chart.fullname" $ }}-{{ $p.name }}
+  labels:
+    app.kubernetes.io/component: {{ $p.comp }}
+    {{- include "chart.labels" $ | nindent 4 }}
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with $sc }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $p.size | quote }}
+{{ end }}

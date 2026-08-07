@@ -1,0 +1,6 @@
+{{- include "chart.cronjob" (dict
+    "ctx"     .
+    "mode"    "upload"
+    "cfg"     .Values.cronjobs.upload
+    "jobName" "upload"
+) }}

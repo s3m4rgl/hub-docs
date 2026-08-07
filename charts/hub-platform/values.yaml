@@ -1,0 +1,255 @@
+## Hub-platform — umbrella-чарт для Security Hub.
+##
+## Один helm install устанавливает:
+##   - security-scan-hub  (alias: hub)
+##   - domainscope
+##   - openvas
+##   - owasp-zap          (alias: zap)
+##
+## Все общие/чувствительные значения управляются централизованно в этом umbrella
+## через `templates/master-secrets.yaml`. Каждый subchart настроен использовать
+## эти заранее созданные Secrets через `secrets.existingSecretName`.
+##
+## --- Управление верхнего уровня ---
+
+## --- Global-значения (автоматически проброшены во все subchart'ы как .Values.global.*) ---
+##
+## Helm копирует блок `global:` в values каждого subchart'а, поэтому subchart'ы
+## могут читать их через `.Values.global.<key>` внутри `tpl`-рендеримых полей.
+global:
+  ## Публичное имя хоста, по которому пользователи заходят в браузере. Все ingress
+  ## объекты используют его. Для multi-host (отдельные хосты openvas/zap)
+  ## переопределите в каждом subchart отдельно.
+  domain: hub.example.com
+
+  ## Default project — создаётся seed-admin Job'ом в БД hub'а при первом install.
+  ## DomainScope сразу подхватывает scope, запускает сканы и пушит SARIF в hub.
+  ##
+  ## UUID'ы (project/product) генерятся РАНДОМНО при первом install (uuidv4),
+  ## затем сохраняются в master-secret и переиспользуются на upgrade через
+  ## lookup. На каждом install — свежие UUID, между upgrade'ами стабильны.
+  defaultProject:
+    enabled: true
+    projectName: "Default"
+    productName: "example.com"
+    ## Скоуп сканирования (через запятую, если несколько доменов).
+    ## ВАЖНО: переопределите через --set global.defaultProject.scope=mycorp.com
+    ## или после установки в Hub UI. example.com — placeholder.
+    scope: "example.com"
+    ## При необходимости можно задать конкретный UUID (миграция со старого
+    ## инсталла), иначе uuidv4 сгенерируется автоматически и сохранится в hub-secrets.
+    projectId: ""
+    productId: ""
+
+## Удобный alias верхнего уровня (повторяет global.domain; собственные шаблоны
+## umbrella используют его — subchart'ы используют global.domain).
+domain: hub.example.com
+
+## Режим аутентификации для hub UI/API:
+##   LOCAL  — локальный логин/пароль (без внешнего IDP). По умолчанию для быстрой установки.
+##   SSO    — Keycloak/OIDC (настройте в hub.backend.env.keycloak* ниже).
+authMode: LOCAL
+
+## --- Ingress (применяется ко всем subchart'ам, если не переопределено) ---
+ingress:
+  ## traefik (по умолчанию в k3s) или nginx
+  className: traefik
+
+## --- TLS (применяется ко всем subchart'ам, если не переопределено) ---
+tls:
+  ## selfsigned | letsencrypt | existing | disabled
+  mode: selfsigned
+  ## При необходимости переопределите cert-manager ClusterIssuer (для продвинутых сценариев)
+  issuer: ""
+  ## Обязательно при mode=existing
+  existingSecretName: ""
+  ## Email оператора (используется для letsencrypt-prod ClusterIssuer; управляется install.sh)
+  letsencryptEmail: "admin@example.com"
+
+## --- Master secrets (управляются umbrella) ---
+##
+## Если оставить любое значение пустым, umbrella сгенерирует случайное при первой
+## установке и сохранит его между upgrade'ами (helm.sh/resource-policy=keep + lookup).
+## Subchart'ы ссылаются на эти Secrets по имени — никогда не задают свои.
+secrets:
+  ## security-scan-hub
+  hubDbPassword: ""
+  hubJwtSecret: ""
+  hubKeycloakClientSecret: ""           # авто; binding env: KEYCLOAK_CLIENT_SECRET
+  hubLlmApiKey: ""
+  hubIacScannerApiKey: ""
+  hubLocalAdminPassword: ""             # авто; логика: backend seedLocalAdmin()
+  ## domainscope
+  domainscopeDbPassword: ""
+  domainscopeSarifApiToken: ""           # выдаётся hub'ом; изначально оставляется пустым
+  domainscopeNetboxApiToken: ""
+  ## openvas (admin-пароль также используется domainscope как openvasPassword)
+  openvasAdminPassword: ""
+  openvasDbPassword: ""
+  ## ZAP API key (также пробрасывается в domainscope ZAP_INSTANCES_JSON)
+  zapApiKey: ""
+
+## --- WireGuard egress (рекомендуется для исходящих сканеров) ---
+##
+## Генерация пары ключей описана в scripts/wg/. Порядок действий:
+##   1. Запустите scripts/wg/1-setup-server.sh на WG-сервере.
+##   2. Запустите scripts/wg/2-generate-clients.sh на машине оператора — он
+##      выводит и блок values ниже, И записи [Peer], которые нужно добавить
+##      на сервере.
+##   3. Запустите scripts/wg/3-register-peers.sh на WG-сервере.
+##   4. Выполните helm install / helm upgrade с wireguard.enabled=true.
+wireguard:
+  enabled: false
+  ## Публичный ключ WG-сервера + endpoint host:port (одинаковые для всех пиров).
+  serverPublicKey: ""
+  serverEndpoint: ""
+  ## Конфигурация по каждому пиру. Каждый пир получает свой privateKey + IP внутри туннеля.
+  peers:
+    domainscope:
+      privateKey: ""
+      podIp: "10.200.0.2/32"
+    openvas:
+      privateKey: ""
+      podIp: "10.200.0.3/32"
+    zap:
+      privateKey: ""
+      podIp: "10.200.0.4/32"
+
+## ---------------------------------------------------------------------------
+## Конфигурация subchart'ов. Umbrella пробрасывает переключатели верхнего уровня
+## в каждый subchart и фиксирует existingSecretName, чтобы subchart'ы не
+## генерировали секреты самостоятельно.
+## ---------------------------------------------------------------------------
+
+## Ниже: значения subchart'ов, проброшенные из umbrella.
+## Все перекрёстные ссылки используют Helm `tpl` внутри subchart'а, чтобы можно
+## было подставить .Release.Name (= "<release>") во время установки.
+
+hub:
+  enabled: true
+  secrets:
+    create: false
+    existingSecretName: '{{ .Release.Name }}-hub-secrets'
+  backend:
+    backend:
+      env:
+        authMode: LOCAL
+        frontendUrl: 'https://{{ .Values.global.domain | default "hub.example.com" }}'
+        keycloakUrl: ""
+        keycloakPublicUrl: ""
+        keycloakRealm: ""
+        keycloakClientId: ""
+        llmDryRun: "true"
+  worker:
+    worker:
+      env:
+        llmDryRun: "true"
+  frontend:
+    frontend:
+      env:
+        apiUrl: 'https://{{ .Values.global.domain | default "hub.example.com" }}'
+        authMode: LOCAL
+  iacScanner:
+    ## По умолчанию ВЫКЛЮЧЕН: iac-scanner запрашивает /api/v1/products/scan-enabled,
+    ## который требует Service Account (со scope list_products). SA создаётся
+    ## администратором через hub UI после первого логина. После этого:
+    ##   helm upgrade hub charts/hub-platform --reuse-values \
+    ##     --set hub.iacScanner.enabled=true \
+    ##     --set secrets.hubIacScannerApiKey=<sa-key>
+    enabled: false
+    env:
+      vmsApiUrl: 'http://{{ if contains "hub" .Release.Name }}{{ .Release.Name }}{{ else }}{{ .Release.Name }}-hub{{ end }}-backend.{{ .Release.Namespace }}:8082/api/v1'
+  ingress:
+    enabled: true
+    className: traefik                   # при необходимости оператор может переопределить
+    host: '{{ .Values.global.domain | default "hub.example.com" }}'
+  tls:
+    mode: selfsigned
+
+domainscope:
+  enabled: true
+  secrets:
+    create: false
+    existingSecretName: '{{ .Release.Name }}-domainscope-secrets'
+  wireguard:
+    enabled: false                       # повторяет wireguard.enabled верхнего уровня
+    existingSecretName: '{{ .Release.Name }}-domainscope-wireguard'
+    privateKey: " "                      # обязательная заглушка; секрет приходит из umbrella
+    serverPublicKey: " "
+    serverEndpoint: " "
+    podIp: "10.200.0.2/32"
+  domainscope:
+    env:
+      ## DOMAINSCOPE_DOMAINS пуст: scope забирается из Hub Scope API (см. ниже).
+      domains: ""
+      ## Hub backend для scope export + SARIF upload (один и тот же сервис,
+      ## разные пути). Шаблон учитывает оба случая: когда release содержит имя
+      ## и когда не содержит.
+      hubEnabled: "true"
+      hubApiEndpoint: 'http://{{ if contains "hub" .Release.Name }}{{ .Release.Name }}{{ else }}{{ .Release.Name }}-hub{{ end }}-backend.{{ .Release.Namespace }}:8082'
+      ## ВАЖНО: корень Hub БЕЗ /api/v1 — SARIF-клиент DomainScope сам дописывает
+      ## /api/v1/products/<id>/reports. Раньше тут был хвост /api/v1 → клиент
+      ## дублировал его → /api/v1/api/v1/... → 404 "page not found" → находки
+      ## тихо терялись (issue #35). Совпадает с hubApiEndpoint выше.
+      sarifApiEndpoint: 'http://{{ if contains "hub" .Release.Name }}{{ .Release.Name }}{{ else }}{{ .Release.Name }}-hub{{ end }}-backend.{{ .Release.Namespace }}:8082'
+      sarifEnabled: "true"
+      sarifAutoUpload: "true"
+      ## sarifProductId берётся из domainscope-secret (cross-wired umbrella'ой
+      ## в master-secrets.yaml).  Здесь оставляем пустым чтобы условие в
+      ## subchart deployment'е НЕ добавило плоский env (в Secret-source приоритет).
+      sarifProductId: ""
+      openvasEnabled: "true"
+      ## Связывается автоматически: сервис openvas gvmd (аналогичное условное именование).
+      openvasHost: '{{ if contains "openvas" .Release.Name }}{{ .Release.Name }}{{ else }}{{ .Release.Name }}-openvas{{ end }}-gvmd.{{ .Release.Namespace }}'
+      openvasPort: "9390"
+      openvasUsername: "admin"
+      zapEnabled: "true"
+      ## ZAP_INSTANCES_JSON читается через secretKeyRef из секрета umbrella.
+      ## (Здесь пусто, чтобы legacy-ветка кода не перезаписала значение из секрета.)
+      zapInstancesJson: ""
+      zapActiveScanPolicy: "Default Policy"
+
+openvas:
+  enabled: true
+  secrets:
+    create: false
+    existingSecretName: '{{ .Release.Name }}-openvas-secrets'
+  wireguard:
+    enabled: false
+    existingSecretName: '{{ .Release.Name }}-openvas-wireguard'
+    privateKey: " "
+    serverPublicKey: " "
+    serverEndpoint: " "
+    podIp: "10.200.0.3/32"
+  ingress:
+    enabled: true
+    className: traefik
+    host: 'openvas.{{ .Values.global.domain | default "hub.example.com" }}'
+  tls:
+    mode: selfsigned
+  feedInit:
+    enabled: true                        # ⚠ первая синхронизация 1–3 ч, ~5 ГБ
+
+zap:
+  enabled: true
+  secrets:
+    create: false
+    existingSecretName: '{{ .Release.Name }}-zap-secrets'
+  wireguard:
+    enabled: false
+    existingSecretName: '{{ .Release.Name }}-zap-wireguard'
+    privateKey: " "
+    serverPublicKey: " "
+    serverEndpoint: " "
+    podIp: "10.200.0.4/32"
+  ingress:
+    enabled: false
+    className: traefik
+  tls:
+    mode: selfsigned
+
+netbox:
+  ## NetBox НЕ входит в umbrella по умолчанию (согласно согласованному scope).
+  ## Чтобы установить его рядом, добавьте dependency в Chart.yaml и раскомментируйте
+  ## значения здесь.
+  enabled: false

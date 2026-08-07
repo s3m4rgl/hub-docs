@@ -1,0 +1,6 @@
+{{- include "chart.cronjob" (dict
+    "ctx"     .
+    "mode"    "cleanup"
+    "cfg"     .Values.cronjobs.cleanup
+    "jobName" "cleanup"
+) }}

@@ -1,0 +1,62 @@
+## Слой переопределений для сценария GitOps / ArgoCD + Vault.
+##
+## Рендеринг через плагин AVP:
+##   helm template <release> charts/security-scan-hub \
+##     -f charts/security-scan-hub/values.yaml \
+##     -f charts/security-scan-hub/values-gitops.yaml \
+##     | argocd-vault-plugin generate -
+##
+## Когда плагин AVP обрабатывает этот файл, плейсхолдеры <path:...> заменяются
+## значениями, извлечёнными из Vault (путь kv/data/hub/prod). Самому чарту
+## рендеринг плейсхолдеров не требуется — secretKeyRef ссылается на тот же
+## Secret, который наполняет AVP / ESO.
+
+secrets:
+  ## Либо задайте existingSecretName, когда AVP/ESO создаёт Secret напрямую:
+  existingSecretName: ""
+  ## …либо позвольте чарту создать Secret из этих разрешённых через AVP значений:
+  create: true
+  dbPassword: "<path:kv/data/hub/prod#dbPassword>"
+  jwtSecret: "<path:kv/data/hub/prod#jwtSecret>"
+  keycloakClientSecret: "<path:kv/data/hub/prod#keycloakClientSecret>"
+  llmApiKey: "<path:kv/data/hub/prod#llmApiKey>"
+  iacScannerApiKey: "<path:kv/data/hub/prod#iacScannerApiKey>"
+
+backend:
+  backend:
+    env:
+      authMode: SSO
+      keycloakUrl: http://keycloak.keycloak:8080/auth
+      keycloakRealm: securityhub
+      keycloakClientId: securityhub
+      llmDryRun: "false"
+
+worker:
+  worker:
+    env:
+      llmDryRun: "false"
+
+frontend:
+  frontend:
+    env:
+      authMode: SSO
+      keycloakRealm: securityhub
+      keycloakClientId: securityhub
+
+## Ingress production-уровня: nginx + Let's Encrypt
+ingress:
+  className: nginx
+  proxyBodySize: "100m"
+  proxyReadTimeout: "300"
+
+tls:
+  mode: letsencrypt
+  issuer: letsencrypt-prod
+
+## Sandbox WG (здесь оставлен выключенным; наполняется из Vault при необходимости)
+sandboxWg:
+  enabled: false
+  privateKey: "<path:kv/data/hub/prod#sandboxWgPrivateKey>"
+  serverPublicKey: "<path:kv/data/hub/prod#sandboxWgServerPublicKey>"
+  serverEndpoint: "<path:kv/data/hub/prod#sandboxWgServerEndpoint>"
+  podIp: "<path:kv/data/hub/prod#sandboxWgPodIp>"

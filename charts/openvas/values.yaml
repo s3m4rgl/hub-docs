@@ -1,0 +1,133 @@
+## Greenbone Community OpenVAS — стек по официальной модели
+## (https://greenbone.github.io/docs/latest/22.4/container/index.html).
+##
+## Архитектура: один Pod, несколько контейнеров, общающихся через unix-sockets
+## (emptyDir). Феды (VT/Notus/SCAP/CERT) загружаются init-контейнерами из
+## контейнерных образов registry.community.greenbone.net.
+##
+## Компоненты в Pod:
+##   pg-gvm        — PostgreSQL 17 для gvmd (TCP 127.0.0.1:5432, baked PGDATA)
+##   gvmd          — Greenbone Vulnerability Manager (unix-socket /run/gvmd/gvmd.sock)
+##   gmp-bridge    — socat: TCP 9390 → /run/gvmd/gvmd.sock (для DomainScope)
+##   gsad          — Web API, общается с gvmd по unix-socket, отдаёт HTTP 9392
+##   ospd-openvas  — координатор сканирования (OSP socket, использует redis)
+##   redis-server  — VT-кэш для ospd-openvas
+##
+## Init-контейнеры (feeds копируются из образа в PVC):
+##   gpg-data, vulnerability-tests, notus-data, scap-data,
+##   cert-bund-data, dfn-cert-data, data-objects, report-formats
+##
+## DomainScope подключается к gvmd через TCP 9390 (GMP) с учёткой admin.
+
+nameOverride: ""
+fullnameOverride: ""
+
+## --- Чувствительные значения ---
+secrets:
+  create: true
+  existingSecretName: ""
+  ## adminPassword — GMP-пользователь admin (DomainScope использует его).
+  adminPassword: ""
+  ## postgresPassword — postgres-роль gvmd (внутри пода, через unix socket
+  ## всё равно используется trust-auth, но прокинем для полноты).
+  postgresPassword: ""
+
+## --- Образы Greenbone Community ---
+##
+## Версия Community Edition сейчас 22.4 → feed release 24.10.
+## Политика версий greenbone community (намеренно НЕ пиним на digest):
+##   :stable    — движки (gvmd, gsad, ospd-openvas, scanner, redis, pg-gvm).
+##                greenbone community не публикует версионных тегов; :stable —
+##                единственный поддерживаемый канал для движков.
+##   :community — feed-data (vulnerability-tests, scap/cert/notus и т.п.). Это
+##                ДАННЫЕ уязвимостей — должны быть свежими, пин убил бы смысл.
+## Для строгой воспроизводимости (air-gapped) зеркальте образы в свой реестр и
+## пиньте по digest там; иначе оставьте как есть.
+images:
+  pgGvm: registry.community.greenbone.net/community/pg-gvm:stable
+  gvmd: registry.community.greenbone.net/community/gvmd:stable
+  gsad: registry.community.greenbone.net/community/gsad:stable
+  ospdOpenvas: registry.community.greenbone.net/community/ospd-openvas:stable
+  openvasScanner: registry.community.greenbone.net/community/openvas-scanner:stable
+  redisServer: registry.community.greenbone.net/community/redis-server:stable
+  gpgData: registry.community.greenbone.net/community/gpg-data:stable
+  vulnerabilityTests: registry.community.greenbone.net/community/vulnerability-tests:community
+  notusData: registry.community.greenbone.net/community/notus-data:community
+  scapData: registry.community.greenbone.net/community/scap-data:community
+  certBundData: registry.community.greenbone.net/community/cert-bund-data:community
+  dfnCertData: registry.community.greenbone.net/community/dfn-cert-data:community
+  dataObjects: registry.community.greenbone.net/community/data-objects:community
+  reportFormats: registry.community.greenbone.net/community/report-formats:community
+
+## Версия фидов (бамптся Greenbone периодически).
+feedRelease: "24.10"
+
+## GMP-пользователь admin
+gvmd:
+  adminUsername: admin
+
+## --- Persistent storage ---
+storage:
+  storageClassName: ""   # "" = кластерный default storageclass (портируемо); задайте свой для конкретного CSI
+  pgData:        { size: 5Gi }   ## PostgreSQL data
+  gvmdData:      { size: 2Gi }   ## gvmd configs / TLS
+  vtData:        { size: 15Gi }  ## ~5GB VT plugins; запас
+  notusData:     { size: 2Gi }
+  scapData:      { size: 5Gi }
+  certData:      { size: 1Gi }   ## cert-bund + dfn-cert (общий PVC)
+  dataObjects:   { size: 1Gi }   ## data-objects + report-formats (общий)
+  gpgData:       { size: 50Mi }
+
+## --- Ingress (gsad web UI) ---
+ingress:
+  enabled: true
+  className: traefik
+  host: openvas.example.com
+  proxyBodySize: "50m"
+  proxyReadTimeout: "600"
+  traefikEntrypoints: "web,websecure"
+  extraAnnotations: {}
+
+## --- TLS ---
+tls:
+  mode: selfsigned
+  issuer: ""
+  existingSecretName: ""
+
+## --- WireGuard egress (рекомендуется для реальных сканов) ---
+wireguard:
+  enabled: false
+  existingSecretName: ""
+  privateKey: ""
+  serverPublicKey: ""
+  serverEndpoint: ""
+  podIp: "10.200.0.3/32"
+  serviceCidr: "10.43.0.0/16"
+  podCidr: "10.42.0.0/16"
+
+## --- Service ---
+service:
+  ## GMP (TCP) — для DomainScope и других внутрикластерных клиентов.
+  gmp:
+    type: ClusterIP
+    port: 9390
+  ## gsad (HTTP) — Web API, frontend для людей через Ingress.
+  gsad:
+    type: ClusterIP
+    port: 9392
+
+## Resource requests/limits ПО КОНТЕЙНЕРАМ (memory = RAM, не диск; диск — в
+## storage.* выше). Всё в одном Pod, поэтому суммарные требования высокие.
+##
+## gvmd поднят 1Gi → 4Gi: загрузка SCAP/CERT + миграции + генерация отчётов
+## упирались в 1Gi и ловили OOM-kill (kernel убивал gvmd по RAM-лимиту) прямо
+## во время скана — из-за чего результаты не доезжали в DomainScope (GMP-сессия
+## рвалась). pg-gvm поднят 1Gi → 2Gi: PostgreSQL держит SCAP/CERT для gvmd и при
+## импорте фидов тоже упирался в память. См. issue #35.
+resources:
+  pgGvm:       { requests: { cpu: "250m", memory: "512Mi" }, limits: { cpu: "1000m", memory: "2Gi" } }
+  gvmd:        { requests: { cpu: "500m", memory: "1Gi" },   limits: { cpu: "2000m", memory: "4Gi" } }
+  gmpBridge:   { requests: { cpu: "10m",  memory: "16Mi" },  limits: { cpu: "200m",  memory: "64Mi" } }
+  gsad:        { requests: { cpu: "50m",  memory: "64Mi" },  limits: { cpu: "300m",  memory: "256Mi" } }
+  redisServer: { requests: { cpu: "50m",  memory: "64Mi" },  limits: { cpu: "500m",  memory: "512Mi" } }
+  ospdOpenvas: { requests: { cpu: "300m", memory: "512Mi" }, limits: { cpu: "2000m", memory: "2Gi" } }

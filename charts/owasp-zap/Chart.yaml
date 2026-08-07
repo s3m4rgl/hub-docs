@@ -1,0 +1,6 @@
+apiVersion: v2
+name: owasp-zap
+description: OWASP ZAP daemon for active web application scanning (drives DomainScope ZAP integration)
+type: application
+version: 0.1.0
+appVersion: "stable"

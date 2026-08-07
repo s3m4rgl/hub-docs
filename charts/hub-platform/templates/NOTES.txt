@@ -1,0 +1,75 @@
+╔═══════════════════════════════════════════════════════════════╗
+║  Security Hub platform installed as release '{{ .Release.Name }}' in '{{ .Release.Namespace }}'  ║
+╚═══════════════════════════════════════════════════════════════╝
+
+== Web UIs ==
+
+  Hub UI / API : http{{ if ne (default "selfsigned" .Values.tls.mode) "disabled" }}s{{ end }}://{{ .Values.domain }}/
+{{- if .Values.openvas.enabled }}
+  OpenVAS gsad : http{{ if ne (default "selfsigned" .Values.tls.mode) "disabled" }}s{{ end }}://openvas.{{ .Values.domain }}/
+{{- end }}
+
+== Логин в UI ==
+
+{{- if eq .Values.authMode "LOCAL" }}
+  AUTH_MODE=LOCAL — admin создан автоматически:
+    URL:      http{{ if ne (default "selfsigned" .Values.tls.mode) "disabled" }}s{{ end }}://{{ .Values.domain }}/
+    email:    admin@localhost.local
+    password: kubectl -n {{ .Release.Namespace }} get secret {{ .Release.Name }}-hub-secrets -o jsonpath='{.data.localAdminPassword}' | base64 -d
+{{- else }}
+  AUTH_MODE=SSO — заходи через Keycloak ({{ .Values.hub.backend.backend.env.keycloakUrl }})
+{{- end }}
+
+  Секреты компонентов — fetch with:
+
+    kubectl -n {{ .Release.Namespace }} get secret {{ .Release.Name }}-hub-secrets       -o jsonpath='{.data.dbPassword}'        | base64 -d  # hub DB pwd
+{{- if .Values.openvas.enabled }}
+    kubectl -n {{ .Release.Namespace }} get secret {{ .Release.Name }}-openvas-secrets   -o jsonpath='{.data.adminPassword}'    | base64 -d  # OpenVAS admin
+{{- end }}
+{{- if .Values.zap.enabled }}
+    kubectl -n {{ .Release.Namespace }} get secret {{ .Release.Name }}-zap-secrets       -o jsonpath='{.data.apiKey}'           | base64 -d  # ZAP API key
+{{- end }}
+
+== Watch progress ==
+
+  kubectl -n {{ .Release.Namespace }} get pods --selector='app.kubernetes.io/instance={{ .Release.Name }}' -w
+  kubectl -n {{ .Release.Namespace }} get ingress
+
+{{- if and .Values.openvas.enabled .Values.openvas.feedInit.enabled }}
+
+== ⚠ OpenVAS feed initialization ==
+
+  Two post-install Jobs are downloading the VT and Notus feeds RIGHT NOW.
+  Initial sync downloads ~5 GB and takes 1–3 hours. The scanner WILL NOT find
+  vulnerabilities until those feeds finish.
+
+  Watch:
+    kubectl -n {{ .Release.Namespace }} logs -f -l app=openvas-feed-vt-init
+    kubectl -n {{ .Release.Namespace }} logs -f -l app=openvas-feed-notus-init
+{{- end }}
+
+{{- if not .Values.wireguard.enabled }}
+
+== ⚠ WireGuard egress disabled ==
+
+  Outbound scan traffic (DomainScope, OpenVAS, ZAP) leaves through the cluster's
+  default gateway. For real-world scans you'll want a dedicated egress IP.
+
+  See scripts/wg/README.md for how to set up the WG server and re-deploy with
+  wireguard.enabled=true.
+{{- end }}
+
+== TLS ==
+
+  mode: {{ default "selfsigned" .Values.tls.mode }}
+{{- if eq (default "selfsigned" .Values.tls.mode) "selfsigned" }}
+  Browsers will warn about untrusted certificate. Accept once, or switch
+  to letsencrypt by setting tls.mode=letsencrypt + tls.letsencryptEmail.
+{{- end }}
+
+== Troubleshooting ==
+
+  Pod stuck pending          : kubectl describe pod ...   (likely PVC StorageClass)
+  Ingress 404                : kubectl get ingressclass ; check tls.mode
+  cert-manager not ready     : kubectl get clusterissuer ; install cert-manager
+  Subcharts can't reach each other: ensure release name = '{{ .Release.Name }}' (used in cross-refs)

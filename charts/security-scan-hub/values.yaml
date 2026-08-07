@@ -1,0 +1,279 @@
+## Security Scan Hub — основные values платформы
+##
+## Поддерживаются два сценария установки:
+##   1. Standalone helm install (по умолчанию) — чарт генерирует случайные пароли
+##      и хранит их в <release>-security-scan-hub-secrets (сохраняются между
+##      upgrade'ами; переживают uninstall за счёт helm.sh/resource-policy=keep).
+##   2. Umbrella / GitOps — задайте secrets.existingSecretName с именем
+##      заранее созданного Secret, управляемого извне (umbrella-чартом или AVP).
+##      В этом случае чарт НЕ создаёт собственный Secret.
+##
+## Слой переопределений на базе AVP / Vault см. в values-gitops.yaml.
+
+kubernetesClusterDomain: cluster.local
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: false
+  name: ""
+
+## --- Чувствительные значения ---
+##
+## Трёхуровневое разрешение (для каждого ключа):
+##   1. переопределение оператором (непустое значение здесь имеет приоритет)
+##   2. существующий Secret в кластере (сохраняется между upgrade'ами)
+##   3. случайная генерация (только при первой установке, если нет переопределения)
+##
+## Задайте existingSecretName, чтобы направить чарт на Secret, управляемый извне
+## (umbrella-чарт, ESO, AVP). При заданном значении генерация на стороне чарта
+## отключается.
+secrets:
+  create: true
+  existingSecretName: ""
+  # Переопределите отдельные ключи здесь (оставьте пустым для авто-генерации при первой установке)
+  dbPassword: ""
+  jwtSecret: ""
+  ## OAuth2/OIDC client secret. Бинарник хаба читает его как KEYCLOAK_CLIENT_SECRET
+  ## ВСЕГДА (даже в AUTH_MODE=LOCAL — там используется для подписи внутренних
+  ## токенов). Имя env-переменной сложилось исторически, по сути это generic auth secret.
+  authClientSecret: ""
+  llmApiKey: ""
+  iacScannerApiKey: ""
+  ## Пароль локального админа (авто-генерация). При старте backend создаёт
+  ## пользователя admin@localhost.local, если LOCAL_ADMIN_PASSWORD задан И в БД нет
+  ## пользователей. Переустановки/upgrade'ы не пересоздают пользователя, если он есть.
+  ## (Для helm-установки логин — admin@localhost.local.)
+  localAdminPassword: ""
+
+backend:
+  replicas: 1
+  strategy:
+    type: Recreate
+  nodeSelector: {}
+  tolerations: []
+  topologySpreadConstraints: []
+  backend:
+    args: []
+    image:
+      repository: dexionius/sshub-backend
+      tag: "0.30"
+      pullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "256Mi"
+      limits:
+        cpu: "1000m"
+        memory: "1Gi"
+    env:
+      appEnv: production
+      serverPort: "8082"
+      dbHost: ""              # авто = <fullname>-postgres
+      dbPort: "5432"
+      dbName: securityhub
+      dbUser: securityhub
+      frontendUrl: https://hub.example.com
+      ## Auth: хаб поддерживает AUTH_MODE=LOCAL (без внешнего IDP) или SSO (Keycloak/OIDC).
+      ## По умолчанию LOCAL — задайте keycloakUrl/Realm/ClientId, чтобы включить SSO.
+      authMode: LOCAL
+      keycloakUrl: ""
+      keycloakPublicUrl: ""
+      keycloakRealm: ""
+      keycloakClientId: ""
+      telegramBotToken: ""
+      notificationsDryRun: "false"
+      fallbackJiraUrl: ""
+      llmBaseUrl: ""
+      llmModel: "glm-4-plus"
+      llmDryRun: "true"      # по умолчанию: не обращаться к LLM, пока не настроено
+      llmFalsePositiveThreshold: "0.9"
+      llmRequestTimeoutSeconds: "180"
+      llmWorkers: "0"        # backend только ставит в очередь, выполняет worker
+      sandboxType: ""
+      ## STORAGE_PATH — subdir под volume /app/storage. Без него backend дефолтит
+      ## в корень volume (root-owned) и upload отчётов падает с chmod EPERM
+      ## (backend = nonroot). /app/storage/reports создаётся и владеется nonroot.
+      storagePath: "/app/storage/reports"
+      logMaxSizeMb: "50"
+      logMaxBackups: "5"
+      logMaxAgeDays: "30"
+      logCompress: "true"
+
+worker:
+  replicas: 1
+  strategy:
+    type: Recreate
+  nodeSelector: {}
+  tolerations: []
+  topologySpreadConstraints: []
+  worker:
+    args: []
+    image:
+      repository: dexionius/sshub-worker
+      tag: "0.30"
+      pullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "512Mi"
+      limits:
+        cpu: "2000m"
+        memory: "2Gi"
+    env:
+      appEnv: production
+      dbHost: ""              # авто = <fullname>-postgres
+      dbPort: "5432"
+      dbName: securityhub
+      dbUser: securityhub
+      llmBaseUrl: ""
+      llmModel: "glm-4-plus"
+      llmDryRun: "true"
+      llmFalsePositiveThreshold: "0.9"
+      llmRequestTimeoutSeconds: "180"
+      llmWorkers: "3"
+      sandboxType: "kubernetes"
+      sandboxImage: "dexionius/sshub-sandbox-tools:latest"
+      sandboxNamespace: ""    # авто = namespace релиза
+      sandboxTimeoutSeconds: "120"
+      sandboxOutputLimitKb: "10"
+      sandboxWgSecretName: ""
+      sandboxWgPodIp: ""
+      dispatcherWorkers: "10"
+      telegramNotificationWorkers: "5"
+      cleanupSchedule: "0 2 * * *"
+      cleanupRetentionCompletedDays: "7"
+      cleanupRetentionFailedDays: "30"
+      cleanupRetentionPendingDays: "0"
+      cleanupDryRun: "false"
+
+frontend:
+  replicas: 1
+  nodeSelector: {}
+  tolerations: []
+  topologySpreadConstraints: []
+  frontend:
+    image:
+      repository: dexionius/sshub-frontend
+      tag: "0.30"
+      pullPolicy: IfNotPresent
+    ## Pod securityContext. По умолчанию — nginx-uid 101 (non-root).
+    ## Если образ копирует бандл как root:root, runtime-инъекция env через
+    ## `sed -i` в entrypoint.sh ломается под non-root — тогда переопределите
+    ## (например, runAsUser: 0). Подробнее — комментарий в frontend-deployment.yaml.
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 101
+      runAsGroup: 101
+      fsGroup: 101
+    resources:
+      requests:
+        cpu: "50m"
+        memory: "64Mi"
+      limits:
+        cpu: "200m"
+        memory: "256Mi"
+    env:
+      apiUrl: https://hub.example.com
+      authMode: LOCAL
+      keycloakUrl: ""
+      keycloakRealm: ""
+      keycloakClientId: ""
+      netboxUrl: ""
+
+postgres:
+  image:
+    repository: postgres
+    tag: "15"
+  env:
+    postgresDb: securityhub
+    postgresUser: securityhub
+
+iacScanner:
+  ## По умолчанию ВЫКЛЮЧЕН: iac-scanner использует /api/v1/products/scan-enabled,
+  ## который требует Service Account в hub'е (с scope list_products). Создаётся
+  ## SA админом через UI после первого логина. После этого:
+  ##   helm upgrade --reuse-values \
+  ##     --set iacScanner.enabled=true \
+  ##     --set secrets.iacScannerApiKey=<sa-key>
+  enabled: false
+  image:
+    repository: dexionius/sshub-iac-scanner
+    tag: "0.30"
+  env:
+    ## tpl-aware: при standalone install резолвится в backend этого же релиза.
+    ## При umbrella установке переопределяется на полный internal-DNS адрес.
+    vmsApiUrl: 'http://{{ include "chart.fullname" . }}-backend:8082/api/v1'
+    scanWorkers: "3"
+    scanScheduleInterval: "300s"
+    logLevel: "info"
+
+## --- Ingress ---
+##
+## className: traefik (по умолчанию в k3s) или nginx
+## При использовании nginx установите чарт ingress-nginx отдельно.
+ingress:
+  enabled: true
+  className: traefik
+  host: hub.example.com
+  ## Параметры, специфичные для класса (только nginx)
+  proxyBodySize: "100m"
+  proxyReadTimeout: "300"
+  ## Параметры, специфичные для класса (только traefik)
+  traefikEntrypoints: "web,websecure"
+  ## Дополнительные аннотации, добавляемые после специфичных для класса
+  extraAnnotations: {}
+
+## --- TLS ---
+##
+## mode:
+##   selfsigned   — cert-manager SelfSigned ClusterIssuer (по умолчанию; работает в air-gapped)
+##   letsencrypt  — cert-manager + Let's Encrypt (требует публичный DNS + доступный HTTP-01)
+##   existing     — укажите собственный заранее созданный Secret через existingSecretName
+##   disabled     — только HTTP (без TLS в ingress)
+tls:
+  mode: selfsigned
+  ## Переопределите имя cert-manager ClusterIssuer (для опытных пользователей)
+  issuer: ""
+  ## Обязательно при mode=existing
+  existingSecretName: ""
+
+pvc:
+  ## backendStorage — сюда backend пишет ЗАГРУЖЕННЫЕ отчёты (/app/storage/reports).
+  ## Файлы хранятся по retention (по умолчанию completed 7 дней, см. cleanup
+  ## CLEANUP_RETENTION_* в backend) и удаляются report-cleanup-воркером.
+  ## 500Mi мало: при частых сканах SARIF-отчёты копятся и переполняют раздел →
+  ## upload падает с 500 "Failed to save file" (ENOSPC). На k3s local-path лимит
+  ## не энфорсится (раздел = node-диск), но реальные CSI (Ceph/Longhorn/cloud)
+  ## его соблюдают — поэтому держим запас.
+  backendStorage:
+    size: 5Gi
+    storageClassName: ""   # "" = кластерный default storageclass (портируемо); задайте свой для конкретного CSI
+  ## workerStorage — рабочие файлы воркера (рендеры PDF-отчётов и пр.).
+  workerStorage:
+    size: 2Gi
+    storageClassName: ""   # "" = кластерный default storageclass (портируемо); задайте свой для конкретного CSI
+  postgresData:
+    size: 10Gi
+    storageClassName: ""   # "" = кластерный default storageclass (портируемо); задайте свой для конкретного CSI
+
+## --- Default project (создаётся seed-admin Job'ом) ---
+##
+## Когда umbrella устанавливает .Values.global.defaultProject — берётся оттуда.
+## В standalone-установке используется этот блок. Для standalone должны быть
+## заполнены secrets.* поля в Secret (defaultProjectId/defaultProductId/...) —
+## это выходит за scope subchart'а, поэтому в standalone defaults enabled=false.
+defaultProject:
+  enabled: false
+
+## --- Sandbox WireGuard egress (опционально) ---
+## При включении задачи sandbox направляют свой трафик через WireGuard-пир.
+## Сгенерируйте ключи через scripts/wg/2-generate-clients.sh; см. docs/wireguard.md.
+sandboxWg:
+  enabled: false
+  privateKey: ""
+  serverPublicKey: ""
+  serverEndpoint: ""
+  podIp: ""
+

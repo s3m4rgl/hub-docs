@@ -1,0 +1,185 @@
+{{- $dbHost := default (printf "%s-postgres" (include "chart.fullname" .)) .Values.backend.backend.env.dbHost -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "chart.fullname" . }}-backend
+  labels:
+    app.kubernetes.io/component: backend
+    {{- include "chart.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.backend.replicas }}
+  strategy:
+    type: {{ .Values.backend.strategy.type | quote }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: backend
+      {{- include "chart.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: backend
+        {{- include "chart.selectorLabels" . | nindent 8 }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      ## Ждём готовности PostgreSQL ПЕРЕД стартом backend. Без этого backend
+      ## стартует раньше БД, падает на подключении/миграциях и крэшится несколько
+      ## раз (CrashLoopBackOff) пока БД поднимается — пугает оператора. Порядок:
+      ## postgres ready → backend.
+      initContainers:
+      - name: wait-for-postgres
+        image: postgres:15-alpine
+        command: ['sh','-c','until pg_isready -h {{ $dbHost }} -p {{ .Values.backend.backend.env.dbPort | default "5432" }} -U {{ .Values.backend.backend.env.dbUser | default "securityhub" }}; do echo "waiting for postgres {{ $dbHost }}..."; sleep 3; done; echo "postgres ready"']
+        resources:
+          requests: { cpu: "50m", memory: "32Mi" }
+          limits:   { cpu: "200m", memory: "64Mi" }
+      containers:
+      - name: backend
+        image: {{ .Values.backend.backend.image.repository }}:{{ .Values.backend.backend.image.tag | default .Chart.AppVersion }}
+        imagePullPolicy: {{ .Values.backend.backend.image.pullPolicy | default "IfNotPresent" }}
+        {{- with .Values.backend.backend.args }}
+        args:
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
+        env:
+        - name: APP_ENV
+          value: {{ .Values.backend.backend.env.appEnv | quote }}
+        - name: SERVER_PORT
+          value: {{ .Values.backend.backend.env.serverPort | quote }}
+        - name: DB_HOST
+          value: {{ $dbHost | quote }}
+        - name: DB_PORT
+          value: {{ .Values.backend.backend.env.dbPort | quote }}
+        - name: DB_NAME
+          value: {{ .Values.backend.backend.env.dbName | quote }}
+        - name: DB_USER
+          value: {{ .Values.backend.backend.env.dbUser | quote }}
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.secretsName" . }}
+              key: dbPassword
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.secretsName" . }}
+              key: jwtSecret
+        - name: FRONTEND_URL
+          ## tpl позволяет umbrella-чарту подставлять URL вида {{ .Values.domain }}.
+          value: {{ tpl (.Values.backend.backend.env.frontendUrl | default "") . | quote }}
+        - name: AUTH_MODE
+          value: {{ .Values.backend.backend.env.authMode | quote }}
+        - name: KEYCLOAK_URL
+          value: {{ .Values.backend.backend.env.keycloakUrl | quote }}
+        - name: KEYCLOAK_PUBLIC_URL
+          value: {{ .Values.backend.backend.env.keycloakPublicUrl | quote }}
+        - name: KEYCLOAK_REALM
+          value: {{ .Values.backend.backend.env.keycloakRealm | quote }}
+        - name: KEYCLOAK_CLIENT_ID
+          value: {{ .Values.backend.backend.env.keycloakClientId | quote }}
+        ## Имя env-переменной KEYCLOAK_CLIENT_SECRET — historic; хаб всегда
+        ## его читает (даже в LOCAL mode используется для подписи токенов).
+        ## В Secret-е храним под именем authClientSecret для ясности.
+        - name: KEYCLOAK_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.secretsName" . }}
+              key: authClientSecret
+        ## При первом старте backend создаст пользователя admin@localhost.local
+        ## с этим паролем (если в БД ещё нет ни одного пользователя). На последующих
+        ## стартах ничего не делает (ENV игнорируется). Для helm-установки
+        ## логин — admin@localhost.local.
+        - name: LOCAL_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.secretsName" . }}
+              key: localAdminPassword
+        - name: TELEGRAM_BOT_TOKEN
+          value: {{ .Values.backend.backend.env.telegramBotToken | quote }}
+        - name: NOTIFICATIONS_DRY_RUN
+          value: {{ .Values.backend.backend.env.notificationsDryRun | quote }}
+        - name: FALLBACK_JIRA_URL
+          value: {{ .Values.backend.backend.env.fallbackJiraUrl | quote }}
+        - name: LOG_MAX_SIZE_MB
+          value: {{ .Values.backend.backend.env.logMaxSizeMb | quote }}
+        - name: LOG_MAX_BACKUPS
+          value: {{ .Values.backend.backend.env.logMaxBackups | quote }}
+        - name: LOG_MAX_AGE_DAYS
+          value: {{ .Values.backend.backend.env.logMaxAgeDays | quote }}
+        - name: LOG_COMPRESS
+          value: {{ .Values.backend.backend.env.logCompress | quote }}
+        - name: LLM_BASE_URL
+          value: {{ .Values.backend.backend.env.llmBaseUrl | quote }}
+        - name: LLM_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.secretsName" . }}
+              key: llmApiKey
+              optional: true
+        - name: LLM_MODEL
+          value: {{ .Values.backend.backend.env.llmModel | quote }}
+        - name: LLM_DRY_RUN
+          value: {{ .Values.backend.backend.env.llmDryRun | quote }}
+        - name: LLM_FALSE_POSITIVE_THRESHOLD
+          value: {{ .Values.backend.backend.env.llmFalsePositiveThreshold | quote }}
+        - name: LLM_WORKERS
+          value: {{ .Values.backend.backend.env.llmWorkers | quote }}
+        - name: LLM_REQUEST_TIMEOUT_SECONDS
+          value: {{ .Values.backend.backend.env.llmRequestTimeoutSeconds | quote }}
+        - name: SANDBOX_TYPE
+          value: {{ .Values.backend.backend.env.sandboxType | quote }}
+        ## STORAGE_PATH — куда backend пишет загруженные отчёты. Без него backend
+        ## дефолтит в ./storage (= корень volume /app/storage, owned root) и upload
+        ## падает с "chmod storage: operation not permitted" (backend = nonroot).
+        ## /app/storage/reports — subdir, который nonroot создаёт и владеет сам.
+        - name: STORAGE_PATH
+          value: {{ .Values.backend.backend.env.storagePath | default "/app/storage/reports" | quote }}
+        - name: KUBERNETES_CLUSTER_DOMAIN
+          value: {{ .Values.kubernetesClusterDomain | quote }}
+        ## extraEnv — произвольные доп. переменные (напр. SSO_PROVIDERS/OIDC_<NAME>_*
+        ## для multi-provider SSO), которых нет в фиксированном списке выше.
+        {{- with .Values.backend.backend.extraEnv }}
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
+        ports:
+        - name: http
+          containerPort: 8082
+          protocol: TCP
+        resources:
+          {{- toYaml .Values.backend.backend.resources | nindent 10 }}
+        volumeMounts:
+        - mountPath: /app/storage
+          name: backend-storage
+        - mountPath: /app/logs
+          name: backend-logs
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 10
+      nodeSelector:
+        {{- toYaml .Values.backend.nodeSelector | nindent 8 }}
+      tolerations:
+        {{- toYaml .Values.backend.tolerations | nindent 8 }}
+      topologySpreadConstraints:
+        {{- toYaml .Values.backend.topologySpreadConstraints | nindent 8 }}
+      restartPolicy: Always
+      serviceAccountName: {{ include "chart.serviceAccountName" . }}
+      volumes:
+      - name: backend-storage
+        persistentVolumeClaim:
+          claimName: {{ include "chart.fullname" . }}-backend-storage
+      - name: backend-logs
+        persistentVolumeClaim:
+          claimName: {{ include "chart.fullname" . }}-backend-logs

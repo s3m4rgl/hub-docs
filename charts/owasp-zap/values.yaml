@@ -1,0 +1,92 @@
+## OWASP ZAP — постоянно работающий daemon для активного сканирования веб-приложений.
+##
+## Архитектура:
+##   - StatefulSet с одной репликой (образ zaproxy/zap-stable, режим daemon).
+##   - Слушает TCP 8090; клиенты (DomainScope) аутентифицируются через X-ZAP-API-Key.
+##   - PVC в /home/zap/.ZAP хранит сессии, контексты и политики сканирования между рестартами.
+##   - Опциональный ingress для веб-интерфейса (у zap2docker нет встроенного UI;
+##     ingress здесь открывает API для инструментов вроде zaproxy/zap-cli вне k8s).
+##
+## Egress:
+##   - Исходящий трафик сканирования (атаки ZAP по целям) идёт через sidecar WireGuard
+##     при wireguard.enabled=true. См. scripts/wg/ и docs/wireguard.md.
+
+nameOverride: ""
+fullnameOverride: ""
+
+## --- Чувствительные значения ---
+secrets:
+  create: true
+  existingSecretName: ""
+  ## API-ключ ZAP. Пустое = генерируется случайно при первой установке (сохраняется при апгрейдах).
+  apiKey: ""
+
+image:
+  repository: zaproxy/zap-stable
+  ## ZAP не публикует версионных тегов — пинимся на digest для воспроизводимости
+  ## (фиксирует конкретный образ, не плавающий latest). Обновлять при апгрейде ZAP:
+  ##   docker buildx imagetools inspect zaproxy/zap-stable:latest
+  ## digest имеет приоритет над tag (см. statefulset.yaml). Сбросить на latest:
+  ## задайте digest: "" .
+  tag: latest
+  digest: "sha256:7c2f8afc893e4e4000be8ad3fd22013fc36e5cce59359349f5a2d45626e2ccb9"
+  pullPolicy: IfNotPresent
+
+## Порт прослушивания daemon ZAP (внутри контейнера; service пробрасывает тот же порт).
+port: 8090
+
+## --- Лимиты ресурсов daemon ---
+##
+## ZAP может потреблять гигабайты heap при активных сканах. Настройте под свою нагрузку.
+resources:
+  requests:
+    cpu: "500m"
+    memory: "1Gi"
+  limits:
+    cpu: "4000m"
+    memory: "4Gi"
+
+## --- Хранилище для сессий, контекстов, политик сканирования ---
+storage:
+  size: 10Gi
+  storageClassName: ""   # "" = кластерный default storageclass (портируемо); задайте свой для конкретного CSI
+
+## --- Service ---
+service:
+  type: ClusterIP
+  port: 8090
+
+## --- Ingress (опционально — открывает API для внешних инструментов) ---
+##
+## У daemon ZAP НЕТ встроенного UI. Ingress здесь полезен, если вы хотите
+## направить десктоп-клиент ZAP на инстанс в кластере. Для интеграции с
+## DomainScope ingress НЕ нужен (всё работает внутри кластера).
+ingress:
+  enabled: false
+  className: traefik
+  host: zap.example.com
+  proxyBodySize: "100m"
+  proxyReadTimeout: "600"
+  traefikEntrypoints: "web,websecure"
+  extraAnnotations: {}
+
+tls:
+  mode: selfsigned
+  issuer: ""
+  existingSecretName: ""
+
+## --- WireGuard egress ---
+wireguard:
+  enabled: false
+  existingSecretName: ""
+  privateKey: ""
+  serverPublicKey: ""
+  serverEndpoint: ""
+  podIp: "10.200.0.4/32"
+  ## CIDR'ы service и pod кластера, которые должны оставаться на шлюзе по умолчанию.
+  ## Значения по умолчанию соответствуют k3s; при необходимости переопределите для не-k3s кластеров.
+  serviceCidr: "10.43.0.0/16"
+  podCidr: "10.42.0.0/16"
+
+## Дополнительные параметры JVM daemon ZAP (передаются через -Xmx и т.п. в Java options).
+jvmOpts: "-Xmx2g"

@@ -1,0 +1,136 @@
+## DomainScope — агент сетевой разведки и сканирования уязвимостей.
+##
+## Обращается к hub backend (загрузка SARIF), NetBox (обнаружение активов), OpenVAS
+## (сканирование CVE) и OWASP ZAP (сканирование веб-приложений) по сети кластера.
+## Исходящий публичный трафик (web-пинги, сканы портов, атаки ZAP) направляется через
+## egress-пир WireGuard при wireguard.enabled=true — см. scripts/wg/ и docs/wireguard.md.
+
+kubernetesClusterDomain: cluster.local
+
+nameOverride: ""
+fullnameOverride: ""
+
+## --- Чувствительные значения ---
+secrets:
+  create: true
+  existingSecretName: ""
+  postgresPassword: ""
+  ## sarifApiToken: bearer-токен от hub для загрузки SARIF. Необходим для отправки результатов.
+  sarifApiToken: ""
+  ## netboxApiToken: указывается только при netboxEnabled=true.
+  netboxApiToken: ""
+  ## openvasPassword: пароль GMP-пользователя (должен совпадать с openvas.gvmd.adminPassword).
+  openvasPassword: ""
+
+domainscope:
+  replicas: 1
+  nodeSelector: {}
+  tolerations: []
+  topologySpreadConstraints: []
+  image:
+    # Пиним конкретную версию вместо плавающего :latest — воспроизводимые
+    # установки. Версия = internal/pkg/utils/version.txt в репо DomainScope;
+    # CI publish (release) пушит dexionius/domain-scope:<version> + :latest.
+    repository: dexionius/domain-scope
+    tag: "0.30"
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "512Mi"
+    limits:
+      cpu: "4000m"
+      memory: "4Gi"
+  env:
+    # Цели сканирования
+    domains: ""
+    ignoredDomains: ""
+    targetPorts: "21,22,25,80,110,143,389,443,445,993,995,1433,1521,3306,3389,5432,5900,6379,8080,8443,27017"
+    # Загрузка SARIF — для auto_upload нужен sarifProductId, который hub backend
+    # выдаёт только ПОСЛЕ того, как вы создадите проект в UI. По умолчанию выключено;
+    # переключите в "true", когда у вас появится product_id.
+    sarifEnabled: "true"
+    sarifAutoUpload: "false"
+    sarifApiEndpoint: ""    # корень Hub БЕЗ /api/v1 (клиент дописывает /api/v1/products/<id>/reports сам); umbrella авто-деривит http://<release>-...-backend.<ns>:8082
+    sarifIpScope: "public"
+    sarifProductId: ""
+    # NetBox
+    netboxEnabled: "false"
+    netboxApiEndpoint: ""
+    # Nuclei
+    nucleiEnabled: "true"
+    nucleiConcurrency: "50"
+    nucleiTemplatesPaths: ""
+    nucleiTags: "exposure,panel,config,debug,misconfig,vuln,cve,default-login,rce"
+    # OpenVAS (задаётся umbrella-чартом при openvas.enabled=true)
+    openvasEnabled: "false"
+    openvasHost: ""         # umbrella авто-выводит в <release>-openvas-gvmd.<ns>
+    openvasPort: "9390"
+    openvasUsername: "admin"
+    # OWASP ZAP (задаётся umbrella-чартом при zap.enabled=true)
+    zapEnabled: "false"
+    zapInstancesJson: ""    # JSON-массив, см. документацию DomainScope
+    zapActiveScanPolicy: "Default Policy"
+    zapAjaxSpiderTimeout: "300"
+    zapRescanPeriod: "86400"
+    # Тайминги
+    timeLoop: "7200"
+    # Интервалы циклов, сек. Пусто → дефолты бинаря (discovery 21600 = 6ч,
+    # portscan 7200 = 2ч). Для ознакомления переопределяются в values-poc.yaml.
+    timeLoopDiscovery: ""
+    timeLoopPortscan: ""
+    timeLoopOpenvas: "86400"
+    fingerprintTimeout: "10"
+    # Тип nmap-скана портов: "" (=syn, default) | "syn" | "connect".
+    #   syn     — TCP SYN, быстрый, требует raw-сокетов (root/CAP_NET_RAW).
+    #   connect — TCP connect, без привилегий. Нужен там, где raw-сокеты
+    #             недоступны: rootless-поды, qemu-эмуляция (amd64-образ на
+    #             arm64-ноде), ограниченный seccomp. Пусто → поведение по умолчанию.
+    scanType: ""
+    # Hub Scope API: domainscope забирает scope (домены для сканирования) из hub.
+    # Подключается umbrella-чартом автоматически; в standalone-установке задайте вручную:
+    #   --set domainscope.domainscope.env.hubEnabled=true
+    #   --set domainscope.domainscope.env.hubApiEndpoint=http://hub-backend:8082
+    # + Secret должен содержать hubApiToken и hubProjectId (umbrella задаёт их автоматически).
+    hubEnabled: "false"
+    hubApiEndpoint: ""
+
+postgres:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "16"
+  env:
+    postgresDb: domainscope
+    postgresUser: domainscope
+  storage:
+    size: 5Gi
+    storageClassName: ""   # "" = кластерный default storageclass (портируемо); задайте свой для конкретного CSI
+
+storage:
+  storageClassName: ""   # "" = кластерный default storageclass (портируемо); задайте свой для конкретного CSI
+  logs:
+    size: 500Mi
+
+## --- WireGuard egress ---
+##
+## При включении трафик пода к публичным IP направляется через wg0 (sidecar/init).
+## Сгенерируйте пару ключей на своей машине с помощью scripts/wg/2-generate-clients.sh.
+##
+## existingSecretName: если задан (umbrella предоставляет Secret с privateKey/serverPublicKey/
+## serverEndpoint/podIp), чарт не будет создавать собственный Secret.
+wireguard:
+  enabled: false
+  existingSecretName: ""
+  privateKey: ""
+  serverPublicKey: ""
+  serverEndpoint: ""           # host:port
+  podIp: "10.200.0.2/32"
+  ## CIDR сервисов и подов кластера, которые НЕ должны идти через wg0 (иначе
+  ## внутрикластерный трафик — включая CoreDNS — был бы туннелирован). По умолчанию
+  ## значения соответствуют k3s; при необходимости укажите реальные диапазоны вашего CNI.
+  ## Узнать их можно командой: kubectl cluster-info dump | grep -i cidr
+  serviceCidr: "10.43.0.0/16"
+  podCidr: "10.42.0.0/16"
+
+## У DomainScope нет публичного ingress (это worker только для исходящих соединений),
+## поэтому блоки ingress/tls здесь отсутствуют. Связь *с* ним идёт по сети кластера.

@@ -1,0 +1,204 @@
+# ============================================================================
+# values-poc.yaml — overlay для ОЗНАКОМИТЕЛЬНОГО / POC-стенда (single-node k3s).
+# ============================================================================
+#
+#  ┌──────────────────────────────────────────────────────────────────────┐
+#  │  ⚠ ВНИМАНИЕ: СЕКРЕТЫ И ID ЗДЕСЬ ЗАХАРДКОЖЕНЫ НАМЕРЕННО.                  │
+#  │                                                                        │
+#  │  Этот файл предназначен ИСКЛЮЧИТЕЛЬНО для:                              │
+#  │    - локального POC / демо / ознакомительного стенда;                   │
+#  │    - воспроизводимых тестов с откатом VM на snapshot                    │
+#  │      (фиксированные секреты => предсказуемый логин после реверта).      │
+#  │                                                                        │
+#  │  ❌ НЕ ИСПОЛЬЗОВАТЬ В PRODUCTION. ❌                                     │
+#  │                                                                        │
+#  │  Для прода:                                                            │
+#  │    - НЕ задавайте блок `secrets:` здесь — umbrella сгенерирует          │
+#  │      случайные значения при первом install и сохранит их между         │
+#  │      upgrade'ами (helm.sh/resource-policy=keep + lookup);               │
+#  │    - либо управляйте секретами через External Secrets Operator /        │
+#  │      Vault / SealedSecrets и ссылайтесь на existingSecretName;          │
+#  │    - смените authMode на SSO (Keycloak) и настройте OIDC;               │
+#  │    - включите WireGuard egress для сканеров.                            │
+#  └──────────────────────────────────────────────────────────────────────┘
+#
+#  Применение:
+#    helm install hub charts/hub-platform -n hub --create-namespace \
+#      -f charts/hub-platform/values-poc.yaml
+#
+#  Цель сканирования по умолчанию: example.com (placeholder из ТЗ POC).
+# ============================================================================
+
+global:
+  ## Hostname для доступа к Hub UI в браузере. Для локального POC пропишите его
+  ## в /etc/hosts (или в hosts хост-машины) на IP ноды k3s:
+  ##   <NODE_IP>  hub.poc.local  openvas.hub.poc.local
+  domain: hub.poc.local
+
+  defaultProject:
+    enabled: true
+    projectName: "POC Demo"
+    productName: "example.com"
+    ## Целевой scope сканирования (из ТЗ POC). example.com — placeholder-домен
+    ## (RFC 2606 / IANA), безопасен для демонстрации сканеров.
+    scope: "example.com"
+    ## POC: фиксированные UUID — стабильны между переустановками/откатами snapshot.
+    ## PROD: оставьте пустыми (uuidv4 сгенерируется и сохранится через lookup).
+    projectId: "00000000-0000-4000-8000-0000000000a1"
+    productId: "00000000-0000-4000-8000-0000000000b2"
+
+domain: hub.poc.local
+
+## LOCAL — локальный логин/пароль, без внешнего IDP. Для POC проще всего.
+## PROD: SSO (Keycloak/OIDC).
+authMode: LOCAL
+
+ingress:
+  ## traefik идёт из коробки в k3s.
+  className: traefik
+
+tls:
+  ## disabled: Hub отдаётся по HTTP через traefik, БЕЗ cert-manager.
+  ## Выбрано для POC: cert-manager-образы на quay.io медленно тянутся из этой
+  ## сети, а для ознакомительного стенда TLS не обязателен — на одну зависимость
+  ## и одну точку отказа меньше.
+  ## PROD: selfsigned (cert-manager) / letsencrypt (публичный домен) / existing.
+  mode: disabled
+  letsencryptEmail: "poc@example.com"
+
+# ----------------------------------------------------------------------------
+# ⚠ POC-СЕКРЕТЫ — ЗАХАРДКОЖЕНЫ. НЕ ДЛЯ PRODUCTION (см. баннер выше).
+# Значения умышленно нетривиальны, но ПУБЛИЧНЫ (лежат в git) => считать
+# скомпрометированными. Любой прод-инсталл ОБЯЗАН использовать другой механизм.
+# ----------------------------------------------------------------------------
+secrets:
+  # --- security-scan-hub ---
+  hubDbPassword: "poc_hub_db_DO_NOT_USE_IN_PROD_8f3a2c"
+  hubJwtSecret: "poc_jwt_secret_DO_NOT_USE_IN_PROD_4b7e1d9a6c2f8e0b3d5a7c9e1f2a4b6c"
+  hubKeycloakClientSecret: "poc_kc_client_secret_DO_NOT_USE_IN_PROD_a1b2c3"
+  hubLlmApiKey: ""                 # LLM-триаж в POC выключен (llmDryRun=true ниже)
+  hubIacScannerApiKey: "poc_iac_api_key_DO_NOT_USE_IN_PROD_d4e5f6a7"
+  ## Пароль локального админа. Логин в UI: admin@localhost.local
+  ## POC: фиксированный, чтобы вход был предсказуем после отката snapshot.
+  hubLocalAdminPassword: "PocAdmin_DO_NOT_USE_IN_PROD_2026"
+  # --- domainscope ---
+  domainscopeDbPassword: "poc_ds_db_DO_NOT_USE_IN_PROD_7c2e9f"
+  domainscopeNetboxApiToken: ""    # NetBox-интеграция в POC не используется
+  # --- openvas (adminPassword также cross-wired в domainscope) ---
+  openvasAdminPassword: "poc_openvas_admin_DO_NOT_USE_IN_PROD_5a8d"
+  openvasDbPassword: "poc_openvas_db_DO_NOT_USE_IN_PROD_3f6b"
+  # --- ZAP API key (также проброшен в domainscope ZAP_INSTANCES_JSON) ---
+  zapApiKey: "poc_zap_api_key_DO_NOT_USE_IN_PROD_9e1c4a7b2d"
+
+## WireGuard egress — ВЫКЛЮЧЕН для POC (для простоты). Исходящий трафик
+## сканеров (DomainScope/OpenVAS/ZAP) идёт через дефолтный шлюз ноды, без
+## init-контейнера wg-setup (он инжектится только при wireguard.enabled=true).
+##
+## Блок ниже оставлен ЗАКОММЕНТИРОВАННЫМ как образец: показывает, ЧТО можно
+## включить (выделенный egress-IP через WG-туннель), но по умолчанию не
+## запускается. Для прод-сценария с реальными сканами:
+##   1. scripts/wg/{1,2,3}-*.sh — поднять WG-сервер и сгенерить ключи пиров;
+##   2. раскомментировать и заполнить блок ниже (или передать -f wg-values.yaml);
+##   3. helm upgrade ... --set wireguard.enabled=true.
+wireguard:
+  enabled: false
+  ## --- ПРИМЕР (закомментировано; не активно при enabled: false) ---
+  # serverPublicKey: "<base64-pubkey-WG-сервера>"
+  # serverEndpoint: "wg.example.com:51820"
+  # peers:
+  #   domainscope:
+  #     privateKey: "<base64-privkey-пира-domainscope>"
+  #     podIp: "10.200.0.2/32"
+  #   openvas:
+  #     privateKey: "<base64-privkey-пира-openvas>"
+  #     podIp: "10.200.0.3/32"
+  #   zap:
+  #     privateKey: "<base64-privkey-пира-zap>"
+  #     podIp: "10.200.0.4/32"
+
+# ----------------------------------------------------------------------------
+# Subchart-переключатели. Все 4 сканера включены (по решению для POC).
+# ВАЖНО: кастомные образы dexionius/* собраны под linux/amd64. На arm64-ноде
+# k3s они исполняются через qemu-user-static + binfmt_misc (эмуляция).
+# Эмуляция МЕДЛЕННАЯ — первый старт и OpenVAS feed-sync займут заметное время.
+# ----------------------------------------------------------------------------
+hub:
+  enabled: true
+  ## TLS отключён и на уровне subchart (umbrella tls.mode не пробрасывается в
+  ## hub.tls автоматически) — иначе ingress получит cert-manager-аннотацию.
+  tls:
+    mode: disabled
+  backend:
+    backend:
+      env:
+        ## development: в production-режиме backend требует KEYCLOAK_URL=https://
+        ## даже при AUTH_MODE=LOCAL (где keycloak вообще не используется) и
+        ## падает FATAL. Для POC с локальным логином — development.
+        appEnv: development
+        ## http (не https): TLS отключён. Если оставить https-дефолт умбреллы,
+        ## фронт фетчит https://hub.poc.local/api/v1/auth/config с http-страницы
+        ## → mixed-content/ошибка → fallback на экран SSO вместо локального логина.
+        frontendUrl: http://hub.poc.local
+        llmDryRun: "true"          # POC: без реальных вызовов LLM
+  worker:
+    worker:
+      env:
+        appEnv: development
+        llmDryRun: "true"
+  frontend:
+    frontend:
+      ## ВАЖНО: http (не https) — иначе фронт не достучится до auth/config и
+      ## покажет SSO-экран вместо локального логина (см. выше).
+      env:
+        apiUrl: http://hub.poc.local
+        authMode: LOCAL
+      ## Образ копирует бандл как root:root, а entrypoint.sh инжектит env через
+      ## `sed -i` → под non-root uid 101 ломается (Permission denied). Запускаем
+      ## под root, чтобы инъекция отработала. PROD: пересобрать образ с
+      ## chown 101 на /usr/share/nginx/html и вернуть non-root.
+      podSecurityContext:
+        runAsNonRoot: false
+        runAsUser: 0
+  ## iac-scanner: amd64-образ под эмуляцией. Включается ПОСЛЕ создания
+  ## Service Account в Hub UI (см. комментарий в values.yaml). По умолчанию off.
+  iacScanner:
+    enabled: false
+
+domainscope:
+  enabled: true
+  domainscope:
+    env:
+      ## OpenVAS выключен в POC → DomainScope не должен пытаться ходить к gvmd.
+      openvasEnabled: "false"
+      ## Минимальные задержки между циклами для ознакомления: пауза = время ОЖИДАНИЯ
+      ## после завершения предыдущего цикла до старта следующего. 60с — быстрая
+      ## обратная связь + self-heal, если первый цикл стартовал до готовности
+      ## зависимостей (DNS/Hub scope).
+      ## PROD: верните дефолты (discovery 21600=6ч, portscan 7200=2ч, openvas 86400,
+      ## zap rescan 86400), иначе будете молотить цель и сеть непрерывно.
+      timeLoop: "60"
+      timeLoopDiscovery: "60"
+      timeLoopPortscan: "60"
+      timeLoopOpenvas: "60"
+      zapRescanPeriod: "60"
+      ## connect-скан (nmap -sT): amd64-образ DomainScope под qemu-эмуляцией на
+      ## arm64-ноде НЕ может открыть raw-сокеты → SYN-скан падает
+      ## (pcap_open_live() failed) → порты не находятся → нет находок.
+      ## connect работает без raw-сокетов. PROD на нативном amd64 — "syn".
+      scanType: "connect"
+
+openvas:
+  ## ВЫКЛЮЧЕН для POC. Образы greenbone (registry.community.greenbone.net) —
+  ## amd64-only под эмуляцией, 14 образов + первичная синхронизация фидов ~5 ГБ
+  ## (1–3 ч, под эмуляцией дольше). Несоразмерно тяжело для ознакомительного
+  ## стенда. Включить позже: --set openvas.enabled=true (и завести greenbone
+  ## registry mirror, иначе тянуться будет очень долго).
+  enabled: false
+  feedInit:
+    enabled: false
+
+zap:
+  ## ZAP-образ (zaproxy/zap-stable) — multiarch, на arm64 идёт НАТИВНО.
+  enabled: true
+  tls:
+    mode: disabled

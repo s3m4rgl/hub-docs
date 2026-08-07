@@ -1,0 +1,64 @@
+## NetBox — источник истины IPAM/DCIM (разворачивается на под-пути /netbox).
+##
+## НЕ устанавливается umbrella-чартом hub-platform по умолчанию. Используйте этот чарт
+## отдельно или через GitOps-сценарий, когда вам нужна интеграция с NetBox.
+
+nameOverride: ""
+fullnameOverride: ""
+
+secrets:
+  create: true
+  existingSecretName: ""
+  secretKey: ""
+  superuserPassword: ""
+  superuserApiToken: ""
+  dbPassword: ""
+  redisPassword: ""
+
+netbox:
+  image:
+    repository: netboxcommunity/netbox
+    tag: "v4.2"
+  env:
+    allowedHosts: "hub.example.com"
+    superuserName: admin
+    superuserEmail: admin@example.com
+    loginRequired: "True"
+    forceScriptName: "/netbox"
+
+postgres:
+  image:
+    repository: postgres
+    tag: "16"
+  storage:
+    size: 10Gi
+    storageClassName: ""   # "" = кластерный default storageclass (портируемо); задайте свой для конкретного CSI
+
+redis:
+  image:
+    repository: redis
+    tag: 7-alpine
+  storage:
+    size: 1Gi
+    storageClassName: ""   # "" = кластерный default storageclass (портируемо); задайте свой для конкретного CSI
+
+storage:
+  media:
+    size: 5Gi
+    storageClassName: ""   # "" = кластерный default storageclass (портируемо); задайте свой для конкретного CSI
+
+ingress:
+  enabled: true
+  className: traefik
+  host: hub.example.com
+  ## Префикс пути — /netbox и /netbox/* проксируются на сервис netbox
+  path: /netbox(/|$)(.*)
+  proxyBodySize: "25m"
+  rewriteTarget: "/netbox/$2"
+  traefikEntrypoints: "web,websecure"
+  extraAnnotations: {}
+
+tls:
+  mode: selfsigned
+  issuer: ""
+  existingSecretName: ""

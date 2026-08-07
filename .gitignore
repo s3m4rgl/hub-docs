@@ -1,0 +1,12 @@
+
+__pycache__/
+.env
+.venv-docs/
+.venv/
+*.pyc
+*.tgz
+# Helm
+# Local env
+charts/*/*.tgz
+charts/*/charts/
+site/

@@ -1,0 +1,21 @@
+## Слой переопределений AVP / Vault для пути GitOps.
+
+secrets:
+  create: true
+  existingSecretName: ""
+  apiKey: "<path:kv/data/zap/prod#apiKey>"
+
+ingress:
+  enabled: false
+  className: nginx
+
+tls:
+  mode: letsencrypt
+  issuer: letsencrypt-prod
+
+wireguard:
+  enabled: true
+  privateKey: "<path:kv/data/zap/prod#wireguardPrivateKey>"
+  serverPublicKey: "<path:kv/data/zap/prod#wireguardServerPublicKey>"
+  serverEndpoint: "<path:kv/data/zap/prod#wireguardServerEndpoint>"
+  podIp: "<path:kv/data/zap/prod#wireguardPodIp>"

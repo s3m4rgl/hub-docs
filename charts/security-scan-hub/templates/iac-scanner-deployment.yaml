@@ -1,0 +1,83 @@
+{{- if .Values.iacScanner.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "chart.fullname" . }}-iac-scanner
+  labels:
+    app.kubernetes.io/component: iac-scanner
+    {{- include "chart.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: iac-scanner
+      {{- include "chart.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: iac-scanner
+        {{- include "chart.selectorLabels" . | nindent 8 }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: iac-scanner
+        image: {{ .Values.iacScanner.image.repository }}:{{ .Values.iacScanner.image.tag | default .Chart.AppVersion }}
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: VMS_API_URL
+          ## tpl даёт umbrella-чарту шанс прокинуть release-name-aware URL
+          ## (по умолчанию указывает на hub-backend этого же релиза).
+          value: {{ tpl (.Values.iacScanner.env.vmsApiUrl | default "") . | quote }}
+        - name: VMS_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.secretsName" . }}
+              key: iacScannerApiKey
+        - name: DATABASE_DSN
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.secretsName" . }}
+              key: iacScannerDsn
+        - name: SCAN_WORKERS
+          value: {{ .Values.iacScanner.env.scanWorkers | quote }}
+        - name: SCAN_SCHEDULE_INTERVAL
+          value: {{ .Values.iacScanner.env.scanScheduleInterval | quote }}
+        - name: LOG_LEVEL
+          value: {{ .Values.iacScanner.env.logLevel | quote }}
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "512Mi"
+          limits:
+            cpu: "2000m"
+            memory: "2Gi"
+        volumeMounts:
+        - name: tmp-scans
+          mountPath: /tmp/iac-scans
+        ## iac-scanner has no HTTP health endpoint, so probe by checking that
+        ## the main process is still running. Replace with httpGet once the
+        ## image exposes a /healthz handler.
+        livenessProbe:
+          exec:
+            command: ["/bin/sh", "-c", "pgrep -f iac-scanner >/dev/null"]
+          initialDelaySeconds: 30
+          periodSeconds: 60
+          failureThreshold: 3
+          timeoutSeconds: 5
+        readinessProbe:
+          exec:
+            command: ["/bin/sh", "-c", "pgrep -f iac-scanner >/dev/null"]
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 5
+      restartPolicy: Always
+      volumes:
+      - name: tmp-scans
+        emptyDir:
+          sizeLimit: 5Gi
+{{- end }}

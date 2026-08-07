@@ -1,0 +1,197 @@
+# Security Hub — локальный запуск через Docker Compose.
+#
+# Минимальный стек для ознакомления: PostgreSQL + backend + worker + frontend.
+# Аутентификация — локальная (логин/пароль), Keycloak не требуется.
+# Образы берутся готовыми из Docker Hub (сборка из исходников не нужна).
+#
+# Запуск (два шага — bootstrap создаёт администратора, затем backend
+# перечитывает роли):
+#   cp .env.example .env            # при желании поправьте пароли/порты
+#   docker compose up -d            # поднимет стек + одноразовый bootstrap
+#   docker compose restart backend  # backend применит роль администратора
+#   откройте http://localhost:3000
+#   вход: admin@localhost.local / значение LOCAL_ADMIN_PASSWORD (см. .env)
+#
+# Остановка:           docker compose down
+# Остановка + очистка: docker compose down -v   (удалит данные БД)
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: sshub-postgres
+    environment:
+      POSTGRES_DB: securityhub
+      POSTGRES_USER: securityhub
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-securityhub123}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U securityhub -d securityhub"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  backend:
+    image: dexionius/sshub-backend:${HUB_VERSION:-0.30}
+    container_name: sshub-backend
+    environment:
+      # Локальная аутентификация: вход по логину/паролю, Keycloak не нужен.
+      AUTH_MODE: LOCAL
+      # Пароль первого администратора (учётка admin@localhost.local создаётся
+      # автоматически при первом старте). Обязательно смените в .env.
+      LOCAL_ADMIN_PASSWORD: ${LOCAL_ADMIN_PASSWORD:-Admin1234!}
+      # Окружение разработки/ознакомления. Для боевого стенда используйте
+      # отдельную инсталляцию по документации (https-ingress, секреты и т.д.).
+      APP_ENV: development
+      DB_HOST: sshub-postgres
+      DB_PORT: 5432
+      DB_NAME: securityhub
+      DB_USER: securityhub
+      DB_PASSWORD: ${DB_PASSWORD:-securityhub123}
+      # Секрет подписи JWT. Обязательно замените на собственное случайное значение.
+      JWT_SECRET: ${JWT_SECRET:-please-change-this-to-a-random-secret}
+      SERVER_PORT: 8082
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
+      ACCESS_TOKEN_TTL_MINUTES: ${ACCESS_TOKEN_TTL_MINUTES:-15}
+      REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-7}
+      # Образ запускается под непривилегированным пользователем и не может писать
+      # в /app. Каталоги логов и хранилища выносим в writable-путь. Для
+      # ознакомления хранилище эфемерно (очищается при пересоздании контейнера);
+      # при необходимости персистентности смонтируйте сюда отдельный том.
+      LOGS_PATH: /tmp/sshub/logs
+      STORAGE_PATH: /tmp/sshub/storage
+    ports:
+      - "${BACKEND_PORT:-8082}:8082"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    image: dexionius/sshub-worker:${HUB_VERSION:-0.30}
+    container_name: sshub-worker
+    environment:
+      APP_ENV: development
+      DB_HOST: sshub-postgres
+      DB_PORT: 5432
+      DB_NAME: securityhub
+      DB_USER: securityhub
+      DB_PASSWORD: ${DB_PASSWORD:-securityhub123}
+      JWT_SECRET: ${JWT_SECRET:-please-change-this-to-a-random-secret}
+      LOGS_PATH: /tmp/sshub/logs
+      STORAGE_PATH: /tmp/sshub/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    image: dexionius/sshub-frontend:${HUB_VERSION:-0.30}
+    container_name: sshub-frontend
+    environment:
+      # Адрес backend API, который SPA вызывает из браузера. Если меняете
+      # BACKEND_PORT — поправьте и здесь.
+      REACT_APP_API_URL: ${REACT_APP_API_URL:-http://localhost:8082}
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # Одноразовая инициализация: создаёт администратора с паролем, проект, продукт
+  # и сервисный аккаунт сканера; сохраняет токен сканера в общий том (его читает
+  # DomainScope). Отрабатывает один раз и завершается. См. bootstrap/bootstrap.py.
+  bootstrap:
+    image: python:3.12-slim
+    container_name: sshub-bootstrap
+    environment:
+      DB_HOST: sshub-postgres
+      DB_PORT: 5432
+      DB_NAME: securityhub
+      DB_USER: securityhub
+      DB_PASSWORD: ${DB_PASSWORD:-securityhub123}
+      LOCAL_ADMIN_PASSWORD: ${LOCAL_ADMIN_PASSWORD:-Admin1234!}
+    volumes:
+      - ./bootstrap:/bootstrap:ro
+      - scanner_shared:/shared
+    command: >
+      sh -c "pip install --quiet --disable-pip-version-check psycopg2-binary bcrypt &&
+             python /bootstrap/bootstrap.py"
+    depends_on:
+      # Достаточно, что backend запустился: он применит миграции, а bootstrap
+      # сам дождётся готовности схемы (см. wait_for_schema в bootstrap.py).
+      backend:
+        condition: service_started
+    restart: "no"
+
+  # ─── DomainScope: сканер периметра (опционально) ──────────────────────────
+  # Автоматически подхватывает цели из Hub Scope, загружает находки через SARIF.
+  # Токен и product_id получает из общего тома (записывает bootstrap).
+  #
+  # Чтобы включить DomainScope, раскомментируйте оба сервиса ниже.
+  # Чтобы выключить — закомментируйте или удалите их.
+  # После первого запуска перезапустите backend (роль admin применяется через
+  # restart, а токен записывается bootstrap однократно):
+  #   docker compose restart backend
+
+  ds-postgres:
+    image: postgres:16-alpine
+    container_name: ds-postgres
+    environment:
+      POSTGRES_DB: domainscope
+      POSTGRES_USER: domainscope
+      POSTGRES_PASSWORD: ${DS_DB_PASSWORD:-domainscope123}
+    volumes:
+      - ds_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U domainscope -d domainscope"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  domainscope:
+    image: dexionius/domain-scope:${DS_VERSION:-0.30}
+    container_name: ds-scanner
+    # Entrypoint-обёртка: ждёт scanner.env от bootstrap, экспортирует токен
+    # и product_id, затем запускает /domain-scope daemon run.
+    entrypoint: ["/bin/sh", "/entrypoint/ds-entrypoint.sh"]
+    environment:
+      # БД DomainScope (отдельный инстанс — не смешиваем с Hub).
+      DOMAINSCOPE_DSN: "host=ds-postgres user=domainscope password=${DS_DB_PASSWORD:-domainscope123} dbname=domainscope port=5432 sslmode=disable"
+      # Домены для сканирования (также добавляются в Hub scope bootstrap'ом).
+      DOMAINSCOPE_DOMAINS: ${DOMAINSCOPE_TARGETS:-example.com}
+      # Hub Scope API — DomainScope читает цели сканирования из Hub.
+      # Токен (DOMAINSCOPE_HUB_API_TOKEN) подставляет entrypoint из scanner.env.
+      DOMAINSCOPE_HUB_ENABLED: "true"
+      DOMAINSCOPE_HUB_API_ENDPOINT: "http://sshub-backend:8082"
+      # Разрешаем http:// внутри docker-сети (prod требует https).
+      DOMAINSCOPE_HUB_INSECURE: "true"
+      # SARIF — загрузка находок в Hub. Токен и product_id из scanner.env.
+      # ВАЖНО: эндпоинт без /api/v1 — клиент добавляет путь самостоятельно.
+      DOMAINSCOPE_SARIF_ENABLED: "true"
+      DOMAINSCOPE_SARIF_AUTO_UPLOAD: "true"
+      DOMAINSCOPE_SARIF_API_ENDPOINT: "http://sshub-backend:8082"
+      DOMAINSCOPE_SARIF_INSECURE: "true"
+      # Интервалы сканирования (сокращены для ознакомительного стенда).
+      DOMAINSCOPE_TIME_LOOP_DISCOVERY: "3600"
+      DOMAINSCOPE_TIME_LOOP_PORTSCAN: "7200"
+      DOMAINSCOPE_TIME_LOOP_NUCLEI: "3600"
+    volumes:
+      # scanner_shared: bootstrap пишет scanner.env, entrypoint читает.
+      - scanner_shared:/shared:ro
+      # entrypoint-скрипт монтируется из каталога bootstrap.
+      - ./bootstrap:/entrypoint:ro
+    depends_on:
+      ds-postgres:
+        condition: service_healthy
+      bootstrap:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  ds_postgres_data:
+  scanner_shared:

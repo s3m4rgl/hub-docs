@@ -1,0 +1,328 @@
+## Один большой Pod со всем стеком Greenbone Community Edition.
+## Контейнеры общаются через unix-sockets в emptyDir-вольюмах.
+## Init-контейнеры копируют feed-data (VT/Notus/SCAP/CERT) из образов в PVC.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "chart.fullname" . }}
+  labels:
+    app.kubernetes.io/component: openvas
+    {{- include "chart.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate                       # одна реплика, нет смысла в RollingUpdate
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: openvas
+      {{- include "chart.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: openvas
+        {{- include "chart.selectorLabels" . | nindent 8 }}
+    spec:
+      ## fsGroup не ставим: pg-gvm:stable содержит запечённый PGDATA с правами
+      ## 0700 для postgres (uid 104). Любая массовая смена прав через fsGroup
+      ## ломает совместимость с другими feed-контейнерами (uid 1001) → каждый
+      ## том чиним точечно в fix-perms / pg-data-init.
+      restartPolicy: Always
+      initContainers:
+      ## --- Fix-perms: PVC чужих feed-данных под uid 1001 (gvm-user в Greenbone-образах) ---
+      - name: fix-perms
+        image: alpine:3.19
+        securityContext: { runAsUser: 0 }
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          for d in /pvc/gvmd /pvc/vt /pvc/notus /pvc/scap /pvc/cert /pvc/data-objects /pvc/gpg; do
+            [ -d "$d" ] && chown -R 1001:1001 "$d" || true
+          done
+        volumeMounts:
+        - {name: gvmd-data, mountPath: /pvc/gvmd}
+        - {name: vt-data, mountPath: /pvc/vt}
+        - {name: notus-data, mountPath: /pvc/notus}
+        - {name: scap-data, mountPath: /pvc/scap}
+        - {name: cert-data, mountPath: /pvc/cert}
+        - {name: data-objects, mountPath: /pvc/data-objects}
+        - {name: gpg-data, mountPath: /pvc/gpg}
+      ## --- pg-data-init: копирует baked PGDATA из образа pg-gvm в PVC при первом запуске ---
+      ## pg-gvm:stable содержит уже инициализированный кластер PostgreSQL 17 в
+      ## /var/lib/postgresql/17/main внутри образа. Docker named volume на первом
+      ## маунте копирует содержимое образа в volume автоматически — k8s PVC так
+      ## не делает, поэтому без этого init-контейнера pg-gvm падает с exit 1
+      ## без stdout (start-postgresql ловит pipefail в detect_existing_major).
+      - name: pg-data-init
+        image: {{ .Values.images.pgGvm }}
+        securityContext: { runAsUser: 0 }
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          if [ ! -f /pgdata/17/main/PG_VERSION ]; then
+            echo "Init PGDATA из baked image..."
+            cp -a /var/lib/postgresql/. /pgdata/
+            chown -R 104:106 /pgdata
+            echo "PGDATA готов."
+          else
+            echo "PGDATA уже инициализирован (PG_VERSION найден), skip."
+          fi
+        volumeMounts:
+        - {name: pg-data, mountPath: /pgdata}
+      ## --- Feed-data init-контейнеры (копируют baked-in данные в PVC) ---
+      ## STORAGE_PATH=/var/lib/<feed> внутри образа, MOUNT_PATH=/mnt — куда писать.
+      - name: gpg-data-init
+        image: {{ .Values.images.gpgData }}
+        ## STORAGE_PATH = /var/lib/greenbone/gpg (запечён в образе),
+        ## MOUNT_PATH = /mnt (default из образа). Не переопределяем.
+        volumeMounts: [{name: gpg-data, mountPath: /mnt}]
+      - name: vt-init
+        image: {{ .Values.images.vulnerabilityTests }}
+        env: [{name: FEED_RELEASE, value: {{ .Values.feedRelease | quote }}}]
+        volumeMounts: [{name: vt-data, mountPath: /mnt}]
+      - name: notus-init
+        image: {{ .Values.images.notusData }}
+        volumeMounts: [{name: notus-data, mountPath: /mnt}]
+      - name: scap-init
+        image: {{ .Values.images.scapData }}
+        volumeMounts: [{name: scap-data, mountPath: /mnt}]
+      - name: cert-bund-init
+        image: {{ .Values.images.certBundData }}
+        volumeMounts: [{name: cert-data, mountPath: /mnt}]
+      - name: dfn-cert-init
+        image: {{ .Values.images.dfnCertData }}
+        volumeMounts: [{name: cert-data, mountPath: /mnt}]
+      - name: data-objects-init
+        image: {{ .Values.images.dataObjects }}
+        env: [{name: FEED_RELEASE, value: {{ .Values.feedRelease | quote }}}]
+        volumeMounts: [{name: data-objects, mountPath: /mnt}]
+      - name: report-formats-init
+        image: {{ .Values.images.reportFormats }}
+        env: [{name: FEED_RELEASE, value: {{ .Values.feedRelease | quote }}}]
+        volumeMounts: [{name: data-objects, mountPath: /mnt}]
+      {{- if .Values.wireguard.enabled }}
+      - name: wg-setup
+        image: alpine:3.19
+        securityContext:
+          capabilities: { add: [NET_ADMIN] }
+        env:
+        - {name: WG_PRIVATE_KEY, valueFrom: {secretKeyRef: {name: '{{ include "chart.wireguardSecretName" . }}', key: privateKey}}}
+        - {name: WG_SERVER_PUBLIC_KEY, valueFrom: {secretKeyRef: {name: '{{ include "chart.wireguardSecretName" . }}', key: serverPublicKey}}}
+        - {name: WG_SERVER_ENDPOINT, valueFrom: {secretKeyRef: {name: '{{ include "chart.wireguardSecretName" . }}', key: serverEndpoint}}}
+        - {name: WG_POD_IP, valueFrom: {secretKeyRef: {name: '{{ include "chart.wireguardSecretName" . }}', key: podIp}}}
+        - {name: K8S_SERVICE_CIDR, value: {{ default "10.43.0.0/16" .Values.wireguard.serviceCidr | quote }}}
+        - {name: K8S_POD_CIDR, value: {{ default "10.42.0.0/16" .Values.wireguard.podCidr | quote }}}
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          apk add --no-cache wireguard-tools iproute2
+          ## Идемпотентность: при рестарте init-контейнера wg0 может уже существовать
+          ip link del wg0 2>/dev/null || true
+          ip link add wg0 type wireguard
+          echo "${WG_PRIVATE_KEY}" | wg set wg0 private-key /dev/stdin \
+            peer "${WG_SERVER_PUBLIC_KEY}" endpoint "${WG_SERVER_ENDPOINT}" \
+            allowed-ips 0.0.0.0/0 persistent-keepalive 25
+          ip addr add "${WG_POD_IP}" dev wg0
+          ip link set wg0 up
+          DEFAULT_GW=$(ip route | awk '/default/ {print $3}')
+          [ -z "$DEFAULT_GW" ] && { echo "no default gw"; exit 1; }
+          WG_EP_IP=$(echo "${WG_SERVER_ENDPOINT}" | cut -d: -f1)
+          ## Все route-команды идемпотентны: replace вместо add
+          ip route replace "${WG_EP_IP}/32" via "${DEFAULT_GW}"
+          ip route replace 0.0.0.0/1 dev wg0
+          ip route replace 128.0.0.0/1 dev wg0
+          ip route replace "${K8S_SERVICE_CIDR}" via "${DEFAULT_GW}"
+          ip route replace "${K8S_POD_CIDR}" via "${DEFAULT_GW}"
+          ip route replace 10.0.0.0/8 via "${DEFAULT_GW}" || true
+          ip route replace 172.16.0.0/12 via "${DEFAULT_GW}" || true
+          ip route replace 192.168.0.0/16 via "${DEFAULT_GW}" || true
+          wg show
+      {{- end }}
+      containers:
+      ## --- PostgreSQL для gvmd ---
+      ## pg-gvm — НЕ стандартный postgres. Использует Debian-style
+      ## pg_createcluster (data в /var/lib/postgresql/<version>/main/), не PGDATA.
+      ## detect_existing_major() из start-postgresql смотрит на PG_VERSION
+      ## внутри /var/lib/postgresql/<v>/main → требует pre-baked данные на томе
+      ## (поэтому pg-data-init выше).
+      ## gvmd подключается через TCP 127.0.0.1:5432 (один pod = один netns).
+      - name: pg-gvm
+        image: {{ .Values.images.pgGvm }}
+        env:
+        - {name: POSTGRES_DB, value: gvmd}
+        - {name: POSTGRES_USER, value: gvmd}
+        - {name: POSTGRES_PASSWORD, valueFrom: {secretKeyRef: {name: '{{ include "chart.secretsName" . }}', key: postgresPassword}}}
+        - {name: POSTGRES_HOST_AUTH_METHOD, value: scram-sha-256}
+        volumeMounts:
+        - {name: pg-data, mountPath: /var/lib/postgresql}
+        livenessProbe:
+          tcpSocket: {port: 5432}
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          failureThreshold: 5
+          timeoutSeconds: 5
+        readinessProbe:
+          tcpSocket: {port: 5432}
+          initialDelaySeconds: 15
+          periodSeconds: 5
+        resources: {{- toYaml .Values.resources.pgGvm | nindent 10 }}
+
+      ## --- Greenbone Vulnerability Manager (gvmd) ---
+      - name: gvmd
+        image: {{ .Values.images.gvmd }}
+        env:
+        - {name: ADMIN_USERNAME, value: {{ .Values.gvmd.adminUsername | quote }}}
+        - {name: ADMIN_PASSWORD, valueFrom: {secretKeyRef: {name: '{{ include "chart.secretsName" . }}', key: adminPassword}}}
+        ## PGHOST/PGPORT — для psql (libpq) при waiter-проверке.
+        ## gvmd сам по env-переменным libpq не подключается — у него флаги --db-*.
+        - {name: PGHOST, value: 127.0.0.1}
+        - {name: PGPORT, value: "5432"}
+        - {name: PGUSER, value: gvmd}
+        - {name: PGDATABASE, value: gvmd}
+        - {name: PGPASSWORD, valueFrom: {secretKeyRef: {name: '{{ include "chart.secretsName" . }}', key: postgresPassword}}}
+        ## Кастомный командный пайп: pg-gvm и gvmd в одном Pod → одна сеть,
+        ## libpq использует TCP localhost. Соответствующие --db-* флаги
+        ## пробрасываются gvmd напрямую (env libpq для самого gvmd не работает).
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          DB_ARGS="--db-host=127.0.0.1 --db-port=5432 --db-user=gvmd --database=gvmd"
+          ## Ждём готовности postgres через TCP localhost
+          until psql -tAc "SELECT 1" >/dev/null 2>&1; do
+            echo "waiting for postgres on $PGHOST:$PGPORT..."
+            sleep 2
+          done
+          ## Структура /var/lib/gvm на чистом PVC отсутствует — создаём.
+          mkdir -p /var/lib/gvm/gvmd /var/lib/gvm/private /var/lib/gvm/CA
+          if [ ! -f /var/lib/gvm/CA/servercert.pem ]; then
+            echo "Генерирую TLS-сертификаты gvmd..."
+            gvm-manage-certs -a 2>&1 | tail -3
+          fi
+          ## Migrate + admin user
+          gvmd $DB_ARGS --migrate
+          if gvmd $DB_ARGS --get-users 2>/dev/null | grep -q "^${ADMIN_USERNAME}$"; then
+            gvmd $DB_ARGS --user="${ADMIN_USERNAME}" --new-password="${ADMIN_PASSWORD}"
+          else
+            gvmd $DB_ARGS --create-user="${ADMIN_USERNAME}" --password="${ADMIN_PASSWORD}"
+          fi
+          ## Чистим возможный stale-socket с прошлого запуска
+          rm -f /run/gvmd/gvmd.sock
+          ## gvmd НЕ может одновременно слушать TCP и unix-socket
+          ## (--listen + --unix-socket взаимоисключающие). Используем только
+          ## unix-socket, а сосед-контейнер gmp-bridge пробрасывает его в TCP 9390.
+          exec gvmd $DB_ARGS --foreground \
+            --unix-socket=/run/gvmd/gvmd.sock \
+            --listen-mode=0666 \
+            --osp-vt-update=/run/ospd/ospd-openvas.sock
+        volumeMounts:
+        ## pg-socket НЕ нужен — gvmd подключается к pg-gvm через TCP localhost.
+        - {name: gvmd-data, mountPath: /var/lib/gvm}
+        - {name: gvmd-socket, mountPath: /run/gvmd}
+        - {name: ospd-socket, mountPath: /run/ospd}
+        - {name: gpg-data, mountPath: /etc/openvas/gnupg}
+        - {name: vt-data, mountPath: /var/lib/openvas/plugins}
+        - {name: notus-data, mountPath: /var/lib/notus}
+        - {name: scap-data, mountPath: /var/lib/gvm/scap-data}
+        - {name: cert-data, mountPath: /var/lib/gvm/cert-data}
+        - {name: data-objects, mountPath: /var/lib/gvm/data-objects}
+        resources: {{- toYaml .Values.resources.gvmd | nindent 10 }}
+
+      ## --- gmp-bridge: socat TCP→unix-socket для DomainScope/внешних GMP-клиентов ---
+      ## gvmd слушает только /run/gvmd/gvmd.sock; этот sidecar отдаёт его наружу
+      ## по TCP 9390 (Service.gmp указывает сюда).
+      - name: gmp-bridge
+        image: alpine/socat:1.8.0.0
+        command:
+        - /bin/sh
+        - -c
+        - |
+          ## Ждём пока gvmd создаст unix-socket
+          until [ -S /run/gvmd/gvmd.sock ]; do
+            echo "waiting for /run/gvmd/gvmd.sock..."
+            sleep 2
+          done
+          exec socat -d TCP-LISTEN:9390,reuseaddr,fork UNIX-CONNECT:/run/gvmd/gvmd.sock
+        volumeMounts:
+        - {name: gvmd-socket, mountPath: /run/gvmd}
+        ports:
+        - {name: gmp, containerPort: 9390, protocol: TCP}
+        readinessProbe:
+          tcpSocket: {port: 9390}
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        resources: {{- toYaml .Values.resources.gmpBridge | nindent 10 }}
+
+      ## --- gsad (Web API, общается с gvmd по unix-socket) ---
+      - name: gsad
+        image: {{ .Values.images.gsad }}
+        env:
+        - {name: GSAD_HTTP_ONLY, value: "true"}
+        - {name: GSAD_API_ONLY, value: "true"}
+        - {name: GSAD_FOREGROUND, value: "true"}
+        - {name: GVMD_RUN, value: /run/gvmd}
+        volumeMounts:
+        - {name: gvmd-socket, mountPath: /run/gvmd}
+        ports:
+        - {name: gsad, containerPort: 9392, protocol: TCP}
+        resources: {{- toYaml .Values.resources.gsad | nindent 10 }}
+
+      ## --- redis-server для ospd-openvas (unix socket) ---
+      - name: redis-server
+        image: {{ .Values.images.redisServer }}
+        volumeMounts:
+        - {name: redis-socket, mountPath: /run/redis}
+        resources: {{- toYaml .Values.resources.redisServer | nindent 10 }}
+
+      ## --- ospd-openvas: координатор OpenVAS-сканов (OSP socket) ---
+      - name: ospd-openvas
+        image: {{ .Values.images.ospdOpenvas }}
+        securityContext:
+          capabilities: { add: [NET_ADMIN, NET_RAW] }
+        volumeMounts:
+        - {name: ospd-socket, mountPath: /run/ospd}
+        - {name: redis-socket, mountPath: /run/redis}
+        - {name: gpg-data, mountPath: /etc/openvas/gnupg}
+        - {name: vt-data, mountPath: /var/lib/openvas/plugins}
+        - {name: notus-data, mountPath: /var/lib/notus}
+        resources: {{- toYaml .Values.resources.ospdOpenvas | nindent 10 }}
+      volumes:
+      - {name: pg-data, persistentVolumeClaim: {claimName: '{{ include "chart.fullname" . }}-pg-data'}}
+      - {name: gvmd-data, persistentVolumeClaim: {claimName: '{{ include "chart.fullname" . }}-gvmd-data'}}
+      - {name: gvmd-socket, emptyDir: {}}
+      - {name: ospd-socket, emptyDir: {}}
+      - {name: redis-socket, emptyDir: {}}
+      - {name: vt-data, persistentVolumeClaim: {claimName: '{{ include "chart.fullname" . }}-vt-data'}}
+      - {name: notus-data, persistentVolumeClaim: {claimName: '{{ include "chart.fullname" . }}-notus-data'}}
+      - {name: scap-data, persistentVolumeClaim: {claimName: '{{ include "chart.fullname" . }}-scap-data'}}
+      - {name: cert-data, persistentVolumeClaim: {claimName: '{{ include "chart.fullname" . }}-cert-data'}}
+      - {name: data-objects, persistentVolumeClaim: {claimName: '{{ include "chart.fullname" . }}-data-objects'}}
+      - {name: gpg-data, persistentVolumeClaim: {claimName: '{{ include "chart.fullname" . }}-gpg-data'}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "chart.fullname" . }}-gvmd
+  labels:
+    app.kubernetes.io/component: openvas
+    {{- include "chart.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.gmp.type }}
+  selector:
+    app.kubernetes.io/component: openvas
+    {{- include "chart.selectorLabels" . | nindent 4 }}
+  ports:
+  - name: gmp
+    port: {{ .Values.service.gmp.port }}
+    targetPort: gmp
+    protocol: TCP
+  - name: gsad
+    port: {{ .Values.service.gsad.port }}
+    targetPort: gsad
+    protocol: TCP

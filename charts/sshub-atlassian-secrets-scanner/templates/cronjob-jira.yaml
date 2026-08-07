@@ -1,0 +1,6 @@
+{{- include "chart.cronjob" (dict
+    "ctx"     .
+    "mode"    "jira"
+    "cfg"     .Values.cronjobs.jira
+    "jobName" "jira"
+) }}

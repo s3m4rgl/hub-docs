@@ -1,0 +1,29 @@
+{{- if .Values.ingress.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "chart.fullname" . }}
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
+  annotations:
+    {{- include "chart.ingressAnnotations" . | nindent 4 }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if include "chart.tlsEnabled" . }}
+  tls:
+  - hosts:
+    - {{ .Values.ingress.host | quote }}
+    secretName: {{ include "chart.tlsSecretName" . }}
+  {{- end }}
+  rules:
+  - host: {{ .Values.ingress.host | quote }}
+    http:
+      paths:
+      - path: {{ .Values.ingress.path }}
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: {{ include "chart.fullname" . }}
+            port:
+              number: 8080
+{{- end }}

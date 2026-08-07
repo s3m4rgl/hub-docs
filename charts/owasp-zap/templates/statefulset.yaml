@@ -1,0 +1,196 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "chart.fullname" . }}
+  labels:
+    app.kubernetes.io/component: zap
+    {{- include "chart.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "chart.fullname" . }}-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: zap
+      {{- include "chart.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: zap
+        {{- include "chart.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- if .Values.wireguard.enabled }}
+      initContainers:
+      - name: wg-setup
+        image: alpine:3.19
+        securityContext:
+          capabilities:
+            add: [NET_ADMIN]
+        env:
+        - name: WG_PRIVATE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.wireguardSecretName" . }}
+              key: privateKey
+        - name: WG_SERVER_PUBLIC_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.wireguardSecretName" . }}
+              key: serverPublicKey
+        - name: WG_SERVER_ENDPOINT
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.wireguardSecretName" . }}
+              key: serverEndpoint
+        - name: WG_POD_IP
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.wireguardSecretName" . }}
+              key: podIp
+        - name: K8S_SERVICE_CIDR
+          value: {{ default "10.43.0.0/16" .Values.wireguard.serviceCidr | quote }}
+        - name: K8S_POD_CIDR
+          value: {{ default "10.42.0.0/16" .Values.wireguard.podCidr | quote }}
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          apk add --no-cache wireguard-tools iproute2
+          ## Идемпотентность: при рестарте init-контейнера wg0 может уже существовать
+          ip link del wg0 2>/dev/null || true
+          ip link add wg0 type wireguard
+          echo "${WG_PRIVATE_KEY}" | wg set wg0 \
+            private-key /dev/stdin \
+            peer "${WG_SERVER_PUBLIC_KEY}" \
+            endpoint "${WG_SERVER_ENDPOINT}" \
+            allowed-ips 0.0.0.0/0 \
+            persistent-keepalive 25
+          ip addr add "${WG_POD_IP}" dev wg0
+          ip link set wg0 up
+          DEFAULT_GW=$(ip route | awk '/default/ {print $3}')
+          if [ -z "$DEFAULT_GW" ]; then
+            echo "FATAL: no default gateway in pod netns" >&2; exit 1
+          fi
+          WG_ENDPOINT_IP=$(echo "${WG_SERVER_ENDPOINT}" | cut -d: -f1)
+          ## Идемпотентность: replace вместо add — переживает restart init-контейнера
+          ip route replace "${WG_ENDPOINT_IP}/32" via "${DEFAULT_GW}"
+          ip route replace 0.0.0.0/1 dev wg0
+          ip route replace 128.0.0.0/1 dev wg0
+          ip route replace "${K8S_SERVICE_CIDR}" via "${DEFAULT_GW}"
+          ip route replace "${K8S_POD_CIDR}" via "${DEFAULT_GW}"
+          ip route replace 10.0.0.0/8 via "${DEFAULT_GW}" || true
+          ip route replace 172.16.0.0/12 via "${DEFAULT_GW}" || true
+          ip route replace 192.168.0.0/16 via "${DEFAULT_GW}" || true
+          wg show
+      {{- end }}
+      containers:
+      - name: zap
+        ## digest (sha256:...) подключается через @, тег — через :
+        image: {{ .Values.image.repository }}{{ if .Values.image.digest }}@{{ .Values.image.digest }}{{ else }}:{{ .Values.image.tag }}{{ end }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        ## API key is read from a mounted Secret file rather than passed via
+        ## -config api.key=... — that keeps the key OUT of /proc/<pid>/cmdline
+        ## (visible to anyone with kubectl exec or local ps).
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          API_KEY="$(cat /etc/zap-secret/apiKey)"
+          exec zap.sh -daemon \
+            -host 0.0.0.0 \
+            -port {{ .Values.port }} \
+            -config api.addrs.addr.name=.* \
+            -config api.addrs.addr.regex=true \
+            -config api.key="${API_KEY}"
+        env:
+        - name: JAVA_OPTS
+          value: {{ .Values.jvmOpts | quote }}
+        ports:
+        - name: zap-api
+          containerPort: {{ .Values.port }}
+          protocol: TCP
+        resources:
+          {{- toYaml .Values.resources | nindent 10 }}
+        volumeMounts:
+        - name: zap-secret
+          mountPath: /etc/zap-secret
+          readOnly: true
+        - mountPath: /home/zap/.ZAP
+          name: zap-data
+        ## Liveness via the unauthenticated /JSON/core/view/version/ ZAP API endpoint:
+        ## ZAP requires the API key for most calls but exposes /OTHER/core/other/htmlreport/
+        ## and version checks. We probe TCP instead — ZAP API may reject HTTP probes
+        ## without the right Host header and we don't want to leak the key in env.
+        livenessProbe:
+          tcpSocket:
+            port: zap-api
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          failureThreshold: 5
+        readinessProbe:
+          tcpSocket:
+            port: zap-api
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      restartPolicy: Always
+      volumes:
+      - name: zap-secret
+        secret:
+          secretName: {{ include "chart.secretsName" . }}
+          ## ZAP контейнер запущен от пользователя zap (uid 1000), а Secret-том
+          ## создаётся owned by root, поэтому монтируем с 0444 — всё в pod-е
+          ## изолировано, по сети наружу ключ всё равно идёт по mTLS внутри кластера.
+          defaultMode: 0444
+          items:
+          - key: apiKey
+            path: apiKey
+  volumeClaimTemplates:
+  - metadata:
+      name: zap-data
+      labels:
+        app.kubernetes.io/component: zap
+        {{- include "chart.labels" . | nindent 8 }}
+    spec:
+      accessModes: [ReadWriteOnce]
+      {{- with .Values.storage.storageClassName }}
+      storageClassName: {{ . | quote }}
+      {{- end }}
+      resources:
+        requests:
+          storage: {{ .Values.storage.size | quote }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "chart.fullname" . }}-headless
+  labels:
+    app.kubernetes.io/component: zap
+    {{- include "chart.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/component: zap
+    {{- include "chart.selectorLabels" . | nindent 4 }}
+  ports:
+  - name: zap-api
+    port: {{ .Values.port }}
+    targetPort: zap-api
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "chart.fullname" . }}
+  labels:
+    app.kubernetes.io/component: zap
+    {{- include "chart.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    app.kubernetes.io/component: zap
+    {{- include "chart.selectorLabels" . | nindent 4 }}
+  ports:
+  - name: zap-api
+    port: {{ .Values.service.port }}
+    targetPort: zap-api
+    protocol: TCP

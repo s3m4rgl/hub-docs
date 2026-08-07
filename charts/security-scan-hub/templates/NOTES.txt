@@ -1,0 +1,41 @@
+{{ .Chart.Name }} {{ .Chart.Version }} installed as release {{ .Release.Name }} in namespace {{ .Release.Namespace }}.
+
+== Endpoints ==
+{{- if .Values.ingress.enabled }}
+  Web UI:  http{{ if include "chart.tlsEnabled" . }}s{{ end }}://{{ .Values.ingress.host }}/
+  API:     http{{ if include "chart.tlsEnabled" . }}s{{ end }}://{{ .Values.ingress.host }}/api
+{{- else }}
+  Ingress disabled. Reach services via port-forward:
+    kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "chart.fullname" . }}-frontend 3000:3000
+    kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "chart.fullname" . }}-backend  8082:8082
+{{- end }}
+
+== Логин в UI ==
+{{- if eq .Values.backend.backend.env.authMode "LOCAL" }}
+  AUTH_MODE=LOCAL — учётка админа создана автоматически:
+    email:    admin@localhost.local
+    password: kubectl -n {{ .Release.Namespace }} get secret {{ include "chart.secretsName" . }} -o jsonpath='{.data.localAdminPassword}' | base64 -d
+  Смените пароль сразу после первого логина!
+{{- else }}
+  AUTH_MODE=SSO — заходи через Keycloak ({{ .Values.backend.backend.env.keycloakUrl }})
+{{- end }}
+
+== Generated secrets ==
+{{- if include "chart.shouldCreateSecret" . }}
+  All sensitive values live in Secret  {{ include "chart.secretsName" . }}  (kept across upgrades).
+  Inspect with:
+    kubectl -n {{ .Release.Namespace }} get secret {{ include "chart.secretsName" . }} -o jsonpath='{.data.dbPassword}' | base64 -d
+{{- else }}
+  Using externally-managed Secret: {{ include "chart.secretsName" . }}
+{{- end }}
+
+== TLS ==
+  mode: {{ default "selfsigned" .Values.tls.mode }}
+{{- if eq (default "selfsigned" .Values.tls.mode) "selfsigned" }}
+  Browser will warn about untrusted certificate — accept once, or switch tls.mode=letsencrypt
+  if your host has public DNS.
+{{- end }}
+
+== Next steps ==
+  kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+  kubectl -n {{ .Release.Namespace }} logs -f deploy/{{ include "chart.fullname" . }}-backend

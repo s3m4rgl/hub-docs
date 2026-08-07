@@ -1,0 +1,16 @@
+apiVersion: v2
+name: sshub-atlassian-secrets-scanner
+description: Kingfisher-based secret scanner for Jira and Confluence with SARIF upload to Security Hub
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - security
+  - secrets
+  - kingfisher
+  - jira
+  - confluence
+sources:
+  - https://CHANGEME-your-fork-of-this-repo.git
+maintainers:
+  - name: CHANGEME-your-name

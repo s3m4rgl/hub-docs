@@ -1,0 +1,32 @@
+{{- if .Values.ingress.enabled -}}
+## Ingress направляет внешние HTTP-запросы к gsad (Web API/UI).
+## DomainScope ходит к gvmd:9390 напрямую через cluster-network — отдельный
+## ingress для GMP не нужен (TCP без HTTP-router).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "chart.fullname" . }}
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
+  annotations:
+    {{- include "chart.ingressAnnotations" . | nindent 4 }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if include "chart.tlsEnabled" . }}
+  tls:
+  - hosts:
+    - {{ tpl (.Values.ingress.host | default "") . | quote }}
+    secretName: {{ include "chart.tlsSecretName" . }}
+  {{- end }}
+  rules:
+  - host: {{ tpl (.Values.ingress.host | default "") . | quote }}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ include "chart.fullname" . }}-gvmd
+            port:
+              number: {{ .Values.service.gsad.port }}
+{{- end }}

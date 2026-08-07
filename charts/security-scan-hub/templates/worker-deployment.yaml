@@ -1,0 +1,144 @@
+{{- $dbHost := default (printf "%s-postgres" (include "chart.fullname" .)) .Values.worker.worker.env.dbHost -}}
+{{- $sandboxNs := default .Release.Namespace .Values.worker.worker.env.sandboxNamespace -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "chart.fullname" . }}-worker
+  labels:
+    app.kubernetes.io/component: worker
+    {{- include "chart.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.worker.replicas }}
+  strategy:
+    type: {{ .Values.worker.strategy.type | quote }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: worker
+      {{- include "chart.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: worker
+        {{- include "chart.selectorLabels" . | nindent 8 }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      ## Ждём PostgreSQL перед стартом worker (как backend) — без гонки и
+      ## CrashLoop на старте. Порядок: postgres ready → worker.
+      initContainers:
+      - name: wait-for-postgres
+        image: postgres:15-alpine
+        command: ['sh','-c','until pg_isready -h {{ $dbHost }} -p {{ .Values.worker.worker.env.dbPort | default "5432" }} -U {{ .Values.worker.worker.env.dbUser | default "securityhub" }}; do echo "waiting for postgres {{ $dbHost }}..."; sleep 3; done; echo "postgres ready"']
+        resources:
+          requests: { cpu: "50m", memory: "32Mi" }
+          limits:   { cpu: "200m", memory: "64Mi" }
+      containers:
+      - name: worker
+        image: {{ .Values.worker.worker.image.repository }}:{{ .Values.worker.worker.image.tag | default .Chart.AppVersion }}
+        imagePullPolicy: {{ .Values.worker.worker.image.pullPolicy | default "IfNotPresent" }}
+        {{- with .Values.worker.worker.args }}
+        args:
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
+        env:
+        - name: APP_ENV
+          value: {{ .Values.worker.worker.env.appEnv | quote }}
+        - name: DB_HOST
+          value: {{ $dbHost | quote }}
+        - name: DB_PORT
+          value: {{ .Values.worker.worker.env.dbPort | quote }}
+        - name: DB_NAME
+          value: {{ .Values.worker.worker.env.dbName | quote }}
+        - name: DB_USER
+          value: {{ .Values.worker.worker.env.dbUser | quote }}
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.secretsName" . }}
+              key: dbPassword
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.secretsName" . }}
+              key: jwtSecret
+        ## Worker валидирует KEYCLOAK_CLIENT_SECRET непустым даже в AUTH_MODE=LOCAL.
+        ## Ключ Secret называется authClientSecret для ясности (см. backend).
+        - name: KEYCLOAK_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.secretsName" . }}
+              key: authClientSecret
+        - name: LLM_BASE_URL
+          value: {{ .Values.worker.worker.env.llmBaseUrl | quote }}
+        - name: LLM_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.secretsName" . }}
+              key: llmApiKey
+              optional: true
+        - name: LLM_MODEL
+          value: {{ .Values.worker.worker.env.llmModel | quote }}
+        - name: LLM_DRY_RUN
+          value: {{ .Values.worker.worker.env.llmDryRun | quote }}
+        - name: LLM_FALSE_POSITIVE_THRESHOLD
+          value: {{ .Values.worker.worker.env.llmFalsePositiveThreshold | quote }}
+        - name: LLM_WORKERS
+          value: {{ .Values.worker.worker.env.llmWorkers | quote }}
+        - name: LLM_REQUEST_TIMEOUT_SECONDS
+          value: {{ .Values.worker.worker.env.llmRequestTimeoutSeconds | quote }}
+        - name: SANDBOX_TYPE
+          value: {{ .Values.worker.worker.env.sandboxType | quote }}
+        - name: SANDBOX_IMAGE
+          value: {{ .Values.worker.worker.env.sandboxImage | quote }}
+        - name: SANDBOX_NAMESPACE
+          value: {{ $sandboxNs | quote }}
+        - name: SANDBOX_TIMEOUT_SECONDS
+          value: {{ .Values.worker.worker.env.sandboxTimeoutSeconds | quote }}
+        - name: SANDBOX_OUTPUT_LIMIT_KB
+          value: {{ .Values.worker.worker.env.sandboxOutputLimitKb | quote }}
+        {{- if .Values.sandboxWg.enabled }}
+        - name: SANDBOX_WG_SECRET_NAME
+          value: {{ default (printf "%s-sandbox-wg" (include "chart.fullname" .)) .Values.worker.worker.env.sandboxWgSecretName | quote }}
+        - name: SANDBOX_WG_POD_IP
+          value: {{ .Values.sandboxWg.podIp | quote }}
+        {{- end }}
+        - name: DISPATCHER_WORKERS
+          value: {{ .Values.worker.worker.env.dispatcherWorkers | quote }}
+        - name: TELEGRAM_NOTIFICATION_WORKERS
+          value: {{ .Values.worker.worker.env.telegramNotificationWorkers | quote }}
+        - name: CLEANUP_SCHEDULE
+          value: {{ .Values.worker.worker.env.cleanupSchedule | quote }}
+        - name: CLEANUP_RETENTION_COMPLETED_DAYS
+          value: {{ .Values.worker.worker.env.cleanupRetentionCompletedDays | quote }}
+        - name: CLEANUP_RETENTION_FAILED_DAYS
+          value: {{ .Values.worker.worker.env.cleanupRetentionFailedDays | quote }}
+        - name: CLEANUP_RETENTION_PENDING_DAYS
+          value: {{ .Values.worker.worker.env.cleanupRetentionPendingDays | quote }}
+        - name: CLEANUP_DRY_RUN
+          value: {{ .Values.worker.worker.env.cleanupDryRun | quote }}
+        - name: KUBERNETES_CLUSTER_DOMAIN
+          value: {{ .Values.kubernetesClusterDomain | quote }}
+        resources:
+          {{- toYaml .Values.worker.worker.resources | nindent 10 }}
+        volumeMounts:
+        - mountPath: /app/storage
+          name: worker-storage
+        - mountPath: /app/logs
+          name: worker-logs
+      nodeSelector:
+        {{- toYaml .Values.worker.nodeSelector | nindent 8 }}
+      tolerations:
+        {{- toYaml .Values.worker.tolerations | nindent 8 }}
+      topologySpreadConstraints:
+        {{- toYaml .Values.worker.topologySpreadConstraints | nindent 8 }}
+      restartPolicy: Always
+      serviceAccountName: {{ include "chart.fullname" . }}-worker
+      volumes:
+      - name: worker-storage
+        emptyDir: {}
+      - name: worker-logs
+        persistentVolumeClaim:
+          claimName: {{ include "chart.fullname" . }}-worker-logs

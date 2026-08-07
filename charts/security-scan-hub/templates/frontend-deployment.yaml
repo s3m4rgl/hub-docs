@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "chart.fullname" . }}-frontend
+  labels:
+    app.kubernetes.io/component: frontend
+    {{- include "chart.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.frontend.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: frontend
+      {{- include "chart.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: frontend
+        {{- include "chart.selectorLabels" . | nindent 8 }}
+    spec:
+      ## Pod securityContext конфигурируется через values
+      ## (frontend.frontend.podSecurityContext). По умолчанию — nginx-uid 101.
+      ## ВНИМАНИЕ: entrypoint.sh инжектит env в бандл через `sed -i`, что требует
+      ## прав на запись в /usr/share/nginx/html. Если образ копирует бандл как
+      ## root:root (644), запуск под non-root uid 101 ломает инъекцию
+      ## («sed: can't create temp file ... Permission denied»). В таком случае
+      ## переопределите podSecurityContext (например, runAsUser: 0) — см. values-poc.
+      securityContext:
+        {{- toYaml .Values.frontend.frontend.podSecurityContext | nindent 8 }}
+      containers:
+      - name: frontend
+        image: {{ .Values.frontend.frontend.image.repository }}:{{ .Values.frontend.frontend.image.tag | default .Chart.AppVersion }}
+        imagePullPolicy: {{ .Values.frontend.frontend.image.pullPolicy | default "IfNotPresent" }}
+        env:
+        - name: REACT_APP_API_URL
+          value: {{ tpl (.Values.frontend.frontend.env.apiUrl | default "") . | quote }}
+        - name: REACT_APP_AUTH_MODE
+          value: {{ .Values.frontend.frontend.env.authMode | quote }}
+        - name: REACT_APP_KEYCLOAK_URL
+          value: {{ .Values.frontend.frontend.env.keycloakUrl | quote }}
+        - name: REACT_APP_KEYCLOAK_REALM
+          value: {{ .Values.frontend.frontend.env.keycloakRealm | quote }}
+        - name: REACT_APP_KEYCLOAK_CLIENT_ID
+          value: {{ .Values.frontend.frontend.env.keycloakClientId | quote }}
+        - name: REACT_APP_NETBOX_BASE_URL
+          value: {{ .Values.frontend.frontend.env.netboxUrl | default "" | quote }}
+        - name: KUBERNETES_CLUSTER_DOMAIN
+          value: {{ .Values.kubernetesClusterDomain | quote }}
+        ports:
+        - name: http
+          containerPort: 3000
+          protocol: TCP
+        resources:
+          {{- toYaml .Values.frontend.frontend.resources | nindent 10 }}
+        livenessProbe:
+          httpGet:
+            path: /
+            port: http
+          initialDelaySeconds: 15
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      nodeSelector:
+        {{- toYaml .Values.frontend.nodeSelector | nindent 8 }}
+      tolerations:
+        {{- toYaml .Values.frontend.tolerations | nindent 8 }}
+      topologySpreadConstraints:
+        {{- toYaml .Values.frontend.topologySpreadConstraints | nindent 8 }}
+      restartPolicy: Always
+      serviceAccountName: {{ include "chart.serviceAccountName" . }}

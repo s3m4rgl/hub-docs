@@ -1,0 +1,40 @@
+{{/*
+Cluster-scoped cert-manager Issuers used by all subcharts' ingresses.
+- selfsigned-cluster-issuer: works air-gapped, browsers will warn
+- letsencrypt-prod: ACME HTTP-01 (requires public DNS + reachable :80)
+
+Operator sets .Values.tls.mode in the umbrella; subcharts inherit it.
+
+Skipped if cert-manager CRDs aren't installed yet (operator runs install.sh first).
+*/}}
+{{- $mode := default "selfsigned" .Values.tls.mode -}}
+
+{{- if eq $mode "selfsigned" }}
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ default "selfsigned-cluster-issuer" .Values.tls.issuer }}
+  labels:
+    {{- include "hp.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+{{- end }}
+
+{{- if eq $mode "letsencrypt" }}
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ default "letsencrypt-prod" .Values.tls.issuer }}
+  labels:
+    {{- include "hp.labels" . | nindent 4 }}
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: {{ required "tls.letsencryptEmail must be set when tls.mode=letsencrypt" .Values.tls.letsencryptEmail | quote }}
+    privateKeySecretRef:
+      name: {{ printf "%s-le-account" (include "hp.fullname" .) }}
+    solvers:
+    - http01:
+        ingress:
+          class: {{ .Values.ingress.className }}
+{{- end }}

@@ -1,0 +1,31 @@
+{{ .Chart.Name }} installed as {{ .Release.Name }} in {{ .Release.Namespace }}.
+
+== ZAP API ==
+  Service:  {{ include "chart.fullname" . }}.{{ .Release.Namespace }}:{{ .Values.service.port }}
+  Auth:     X-ZAP-API-Key header
+
+  Retrieve API key:
+    kubectl -n {{ .Release.Namespace }} get secret {{ include "chart.secretsName" . }} -o jsonpath='{.data.apiKey}' | base64 -d
+
+  Quick smoke test (in-cluster):
+    kubectl -n {{ .Release.Namespace }} exec -it sts/{{ include "chart.fullname" . }} -- \
+      curl -s -H "X-ZAP-API-Key: $(kubectl -n {{ .Release.Namespace }} get secret {{ include "chart.secretsName" . }} -o jsonpath='{.data.apiKey}' | base64 -d)" \
+      "http://localhost:{{ .Values.port }}/JSON/core/view/version/"
+
+== DomainScope wiring ==
+  In your DomainScope values (or via the umbrella chart), set:
+
+    domainscope:
+      env:
+        zapEnabled: "true"
+        zapInstancesJson: '[{"url":"http://{{ include "chart.fullname" . }}.{{ .Release.Namespace }}:{{ .Values.service.port }}","api_key":"<API_KEY>"}]'
+
+  The umbrella chart wires this automatically when both subcharts are enabled.
+
+== WireGuard egress ==
+{{- if .Values.wireguard.enabled }}
+  Enabled — outbound scan attacks egress via {{ .Values.wireguard.serverEndpoint }}.
+{{- else }}
+  Disabled. ZAP will scan from the cluster's default IP. Strongly recommended to
+  enable WG before scanning third-party assets — see scripts/wg/.
+{{- end }}

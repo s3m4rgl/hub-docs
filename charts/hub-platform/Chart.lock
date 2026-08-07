@@ -1,0 +1,15 @@
+dependencies:
+- name: security-scan-hub
+  repository: file://../security-scan-hub
+  version: 0.1.0
+- name: domainscope
+  repository: file://../domainscope
+  version: 0.1.0
+- name: openvas
+  repository: file://../openvas
+  version: 0.1.0
+- name: owasp-zap
+  repository: file://../owasp-zap
+  version: 0.1.0
+digest: sha256:a52f1f41a801e1e4e9ebcdcc350a7bfa193026f3a08ce293dbaeb90e5eb9f56c
+generated: "2026-04-25T03:29:51.259893+03:00"

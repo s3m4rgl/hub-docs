@@ -1,0 +1,25 @@
+## Слой переопределений AVP / Vault для GitOps-сценария. См. security-scan-hub/values-gitops.yaml.
+
+secrets:
+  create: true
+  existingSecretName: ""
+  postgresPassword: "<path:kv/data/domainscope/prod#postgresPassword>"
+  sarifApiToken: "<path:kv/data/domainscope/prod#sarifApiToken>"
+  netboxApiToken: "<path:kv/data/domainscope/prod#netboxApiToken>"
+  openvasPassword: "<path:kv/data/domainscope/prod#openvasPassword>"
+
+domainscope:
+  env:
+    # Корень Hub БЕЗ /api/v1 — клиент сам дописывает /api/v1/products/<id>/reports (issue #35).
+    sarifApiEndpoint: "http://security-scan-hub-backend.security-scan-hub:8082"
+    openvasEnabled: "true"
+    openvasHost: "openvas-gvmd.openvas"
+    netboxEnabled: "true"
+    netboxApiEndpoint: "http://netbox.netbox:8080/netbox/api"
+
+wireguard:
+  enabled: true
+  privateKey: "<path:kv/data/domainscope/prod#wireguardPrivateKey>"
+  serverPublicKey: "<path:kv/data/domainscope/prod#wireguardServerPublicKey>"
+  serverEndpoint: "<path:kv/data/domainscope/prod#wireguardServerEndpoint>"
+  podIp: "<path:kv/data/domainscope/prod#wireguardPodIp>"

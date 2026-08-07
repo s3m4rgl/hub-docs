@@ -1,0 +1,21 @@
+## Слой переопределений AVP / Vault для пути GitOps.
+
+secrets:
+  create: true
+  existingSecretName: ""
+  adminPassword: "<path:kv/data/openvas/prod#adminPassword>"
+  postgresPassword: "<path:kv/data/openvas/prod#postgresPassword>"
+
+ingress:
+  className: nginx
+
+tls:
+  mode: letsencrypt
+  issuer: letsencrypt-prod
+
+wireguard:
+  enabled: true
+  privateKey: "<path:kv/data/openvas/prod#wireguardPrivateKey>"
+  serverPublicKey: "<path:kv/data/openvas/prod#wireguardServerPublicKey>"
+  serverEndpoint: "<path:kv/data/openvas/prod#wireguardServerEndpoint>"
+  podIp: "<path:kv/data/openvas/prod#wireguardPodIp>"

@@ -1,0 +1,81 @@
+{{ .Chart.Name }} установлен как релиз {{ .Release.Name }} в неймспейсе {{ .Release.Namespace }}.
+
+== Cron-расписания ==
+{{- range $name, $cfg := .Values.cronjobs }}
+{{- if $cfg.enabled }}
+  {{ printf "%-10s" $name }} {{ $cfg.schedule }}{{ if $.Values.config.timeZone }}  ({{ $.Values.config.timeZone }}){{ else }}  (UTC){{ end }}
+{{- end }}
+{{- end }}
+
+== Окно сканирования ==
+  jira/confluence запускаются каждый день и берут диапазон
+  [сегодня - {{ .Values.config.scanFromDaysAgo }} дней .. сегодня - {{ .Values.config.scanToDaysAgo }} дней].
+  upload  — каждый час, шлёт накопленные SARIF в Hub ({{ .Values.config.hubUrl }}).
+  cleanup — раз в сутки, удаляет уже залитые SARIF старше {{ .Values.config.cleanupMaxAgeDays }} дней.
+
+== Внешние системы ==
+  Hub:        {{ .Values.config.hubUrl }}
+  Jira:       {{ .Values.config.jiraUrl }}
+  Confluence: {{ .Values.config.confluenceUrl }}
+
+  Перед первым прогоном проверьте, что:
+  - Hub-продукты {{ .Values.config.hubJiraProjectId }} и {{ .Values.config.hubConfluenceProjectId }} существуют;
+  - сервисный токен HUB_TOKEN имеет scope upload_report;
+  - Jira/Confluence PAT-ы дают права читать issues/pages.
+
+== Состояние сканера (PVC) ==
+  Один общий ReadWriteOnce PVC хранит state-файлы и очередь SARIF между всеми
+  четырьмя CronJob'ами:
+
+    kubectl -n {{ .Release.Namespace }} get pvc {{ include "chart.fullname" . }}-results
+
+  Заглянуть внутрь (debug):
+    kubectl -n {{ .Release.Namespace }} run debug --rm -it --restart=Never \
+      --image=busybox \
+      --overrides='{"spec":{"containers":[{"name":"debug","image":"busybox","command":["sh"],"stdin":true,"tty":true,"volumeMounts":[{"mountPath":"/app/results","name":"r"}]}],"volumes":[{"name":"r","persistentVolumeClaim":{"claimName":"{{ include "chart.fullname" . }}-results"}}]}}' \
+      -- sh
+
+  ⚠ SARIF-файлы содержат сами найденные секреты в виде plain-text. PVC
+  должен быть на StorageClass с шифрованием at-rest. Подробнее — в README
+  чарта, раздел «Sensitivity warning».
+
+== Секреты ==
+{{- if include "chart.shouldCreateSecret" . }}
+  Чарт создал Secret {{ include "chart.secretsName" . }}
+  (helm.sh/resource-policy: keep — переживает helm uninstall).
+
+  Проверить, что токены проставлены:
+    kubectl -n {{ .Release.Namespace }} get secret {{ include "chart.secretsName" . }} \
+      -o jsonpath='{.data.hubToken}' | base64 -d | head -c 6 && echo "..."
+{{- else }}
+  Используется внешний Secret: {{ include "chart.secretsName" . }}
+  (управляется umbrella / AVP / ESO).
+{{- end }}
+
+== Ручной прогон (smoke-test) ==
+  Самое безопасное начать с upload — он не зовёт Jira/Confluence, только
+  скидывает в Hub то что уже накопилось:
+
+    kubectl -n {{ .Release.Namespace }} create job --from=cronjob/{{ include "chart.fullname" . }}-upload \
+      manual-upload-1
+    kubectl -n {{ .Release.Namespace }} logs -f job/manual-upload-1
+
+  Если upload ругается на отсутствие SARIF — это норма для свежей установки.
+  Дальше можно потриггерить jira/confluence:
+
+    kubectl -n {{ .Release.Namespace }} create job --from=cronjob/{{ include "chart.fullname" . }}-jira \
+      manual-jira-1
+    kubectl -n {{ .Release.Namespace }} logs -f job/manual-jira-1
+
+== Логи ==
+{{- if eq .Values.config.logDestination "stdout" }}
+  Все скрипты пишут в stdout — ловите через kubectl logs.
+{{- else if eq .Values.config.logDestination "file" }}
+  Логи пишутся в файлы на PVC {{ include "chart.fullname" . }}-logs.
+  Чтобы посмотреть, поднимите debug-pod (см. выше) с этим PVC.
+{{- else }}
+  Логи дублируются в stdout и в файлы на PVC {{ include "chart.fullname" . }}-logs.
+{{- end }}
+
+== Что дальше ==
+  kubectl -n {{ .Release.Namespace }} get cronjob,job,pvc -l app.kubernetes.io/instance={{ .Release.Name }}

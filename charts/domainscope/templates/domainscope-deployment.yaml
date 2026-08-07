@@ -1,0 +1,357 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "chart.fullname" . }}-domainscope
+  labels:
+    app.kubernetes.io/component: domainscope
+    {{- include "chart.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.domainscope.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: domainscope
+      {{- include "chart.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: domainscope
+        {{- include "chart.selectorLabels" . | nindent 8 }}
+    spec:
+      initContainers:
+      {{- if .Values.postgres.enabled }}
+      ## Ждём свой PostgreSQL перед стартом DomainScope (порядок: postgres → DS).
+      - name: wait-for-postgres
+        image: postgres:16-alpine
+        command: ['sh','-c','until pg_isready -h {{ include "chart.fullname" . }}-postgres -p 5432 -U {{ .Values.postgres.env.postgresUser | default "domainscope" }}; do echo "waiting for postgres..."; sleep 3; done; echo "postgres ready"']
+        resources:
+          requests: { cpu: "50m", memory: "32Mi" }
+          limits:   { cpu: "200m", memory: "64Mi" }
+      {{- end }}
+      {{- if eq (default "false" .Values.domainscope.env.hubEnabled) "true" }}
+      ## Ждём готовности Hub backend ПЕРЕД стартом DomainScope. Без этого DS на
+      ## быстрых кластерах обгоняет backend, первый scope-fetch падает → активные
+      ## сканеры уходят в fail-closed («hub scope unavailable») и ждут до
+      ## следующего цикла. Порядок запуска: backend ready → DomainScope.
+      - name: wait-for-hub
+        image: alpine:3.19
+        command:
+        - /bin/sh
+        - -c
+        - |
+          ENDPOINT="{{ tpl (.Values.domainscope.env.hubApiEndpoint | default "") . }}"
+          [ -z "$ENDPOINT" ] && { echo "no hub endpoint, skip wait"; exit 0; }
+          apk add --no-cache curl >/dev/null 2>&1
+          echo "Waiting for Hub backend at ${ENDPOINT}/health ..."
+          i=0
+          until curl -fsS -o /dev/null --max-time 5 "${ENDPOINT}/health"; do
+            i=$((i+1))
+            [ $i -ge 60 ] && { echo "Hub backend not ready after 60 tries, proceeding anyway"; exit 0; }
+            echo "  not ready ($i/60), retry in 5s"; sleep 5
+          done
+          echo "Hub backend is ready."
+        resources:
+          requests: { cpu: "50m", memory: "32Mi" }
+          limits:   { cpu: "200m", memory: "64Mi" }
+      {{- end }}
+      - name: nuclei-templates-init
+        image: alpine:3.19
+        command:
+        - /bin/sh
+        - -c
+        - |
+          apk add --no-cache wget tar
+          mkdir -p /app/nuclei-templates
+          echo "Downloading nuclei-templates..."
+          wget -q "https://github.com/projectdiscovery/nuclei-templates/archive/refs/heads/main.tar.gz" \
+            -O /tmp/templates.tar.gz
+          tar -xzf /tmp/templates.tar.gz --strip-components=1 -C /app/nuclei-templates
+          rm /tmp/templates.tar.gz
+          echo "Templates ready: $(find /app/nuclei-templates -name '*.yaml' | wc -l) templates"
+        volumeMounts:
+        - mountPath: /app/nuclei-templates
+          name: nuclei-templates
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+      {{- if .Values.wireguard.enabled }}
+      - name: wg-setup
+        image: alpine:3.19
+        securityContext:
+          capabilities:
+            add:
+            - NET_ADMIN
+        env:
+        - name: WG_PRIVATE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.wireguardSecretName" . }}
+              key: privateKey
+        - name: WG_SERVER_PUBLIC_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.wireguardSecretName" . }}
+              key: serverPublicKey
+        - name: WG_SERVER_ENDPOINT
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.wireguardSecretName" . }}
+              key: serverEndpoint
+        - name: WG_POD_IP
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.wireguardSecretName" . }}
+              key: podIp
+        - name: K8S_SERVICE_CIDR
+          value: {{ default "10.43.0.0/16" .Values.wireguard.serviceCidr | quote }}
+        - name: K8S_POD_CIDR
+          value: {{ default "10.42.0.0/16" .Values.wireguard.podCidr | quote }}
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          apk add --no-cache wireguard-tools iproute2
+
+          ## Идемпотентность: при рестарте init-контейнера wg0 может уже существовать
+          ip link del wg0 2>/dev/null || true
+          ip link add wg0 type wireguard
+          echo "${WG_PRIVATE_KEY}" | wg set wg0 \
+            private-key /dev/stdin \
+            peer "${WG_SERVER_PUBLIC_KEY}" \
+            endpoint "${WG_SERVER_ENDPOINT}" \
+            allowed-ips 0.0.0.0/0 \
+            persistent-keepalive 25
+          ip addr add "${WG_POD_IP}" dev wg0
+          ip link set wg0 up
+
+          DEFAULT_GW=$(ip route | awk '/default/ {print $3}')
+          if [ -z "$DEFAULT_GW" ]; then
+            echo "FATAL: no default gateway in pod netns — refusing to redirect public traffic" >&2
+            exit 1
+          fi
+          WG_ENDPOINT_IP=$(echo "${WG_SERVER_ENDPOINT}" | cut -d: -f1)
+
+          # Pin WG endpoint to original gw — without this we'd loop tunnel-over-tunnel
+          # replace вместо add — идемпотентно при restart init-контейнера
+          ip route replace "${WG_ENDPOINT_IP}/32" via "${DEFAULT_GW}"
+
+          # Public traffic through wg0 (split routing via two /1 routes)
+          ip route replace 0.0.0.0/1 dev wg0
+          ip route replace 128.0.0.0/1 dev wg0
+
+          # k8s service + pod networks MUST stay on the original gateway.
+          # Failure here breaks intra-cluster DNS / Service access — fail closed.
+          ip route replace "${K8S_SERVICE_CIDR}" via "${DEFAULT_GW}"
+          ip route replace "${K8S_POD_CIDR}" via "${DEFAULT_GW}"
+
+          # RFC1918 fallbacks (best-effort; might overlap with K8S_*_CIDR)
+          ip route replace 10.0.0.0/8 via "${DEFAULT_GW}" || true
+          ip route replace 172.16.0.0/12 via "${DEFAULT_GW}" || true
+          ip route replace 192.168.0.0/16 via "${DEFAULT_GW}" || true
+
+          echo "WireGuard configured. Routes:"
+          ip route show table main | head -15
+          echo "WireGuard status:"
+          wg show
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "200m"
+            memory: "128Mi"
+      {{- end }}
+      containers:
+      - name: domainscope
+        image: {{ .Values.domainscope.image.repository }}:{{ .Values.domainscope.image.tag | default .Chart.AppVersion }}
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: DOMAINSCOPE_DOMAINS
+          value: {{ .Values.domainscope.env.domains | quote }}
+        {{- if .Values.domainscope.env.ignoredDomains }}
+        - name: DOMAINSCOPE_IGNORED_DOMAINS
+          value: {{ .Values.domainscope.env.ignoredDomains | quote }}
+        {{- end }}
+        - name: DOMAINSCOPE_TARGET_PORTS
+          value: {{ .Values.domainscope.env.targetPorts | quote }}
+        - name: DOMAINSCOPE_TIME_LOOP
+          value: {{ .Values.domainscope.env.timeLoop | quote }}
+        {{- if .Values.domainscope.env.timeLoopDiscovery }}
+        - name: DOMAINSCOPE_TIME_LOOP_DISCOVERY
+          value: {{ .Values.domainscope.env.timeLoopDiscovery | quote }}
+        {{- end }}
+        {{- if .Values.domainscope.env.timeLoopPortscan }}
+        - name: DOMAINSCOPE_TIME_LOOP_PORTSCAN
+          value: {{ .Values.domainscope.env.timeLoopPortscan | quote }}
+        {{- end }}
+        - name: DOMAINSCOPE_DSN
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.secretsName" . }}
+              key: dsn
+        {{- if .Values.domainscope.env.fingerprintTimeout }}
+        - name: DOMAINSCOPE_FINGERPRINT_TIMEOUT
+          value: {{ .Values.domainscope.env.fingerprintTimeout | quote }}
+        {{- end }}
+        {{- if .Values.domainscope.env.scanType }}
+        - name: DOMAINSCOPE_SCANNER_SCAN_TYPE
+          value: {{ .Values.domainscope.env.scanType | quote }}
+        {{- end }}
+        - name: DOMAINSCOPE_SARIF_ENABLED
+          value: {{ .Values.domainscope.env.sarifEnabled | quote }}
+        - name: DOMAINSCOPE_SARIF_AUTO_UPLOAD
+          value: {{ .Values.domainscope.env.sarifAutoUpload | quote }}
+        - name: DOMAINSCOPE_SARIF_API_ENDPOINT
+          ## tpl allows umbrella to template release-name-aware URLs in values
+          value: {{ tpl (.Values.domainscope.env.sarifApiEndpoint | default "") . | quote }}
+        - name: DOMAINSCOPE_SARIF_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.secretsName" . }}
+              key: sarifApiToken
+              optional: true
+        {{- if .Values.domainscope.env.sarifIpScope }}
+        - name: DOMAINSCOPE_SARIF_IP_SCOPE
+          value: {{ .Values.domainscope.env.sarifIpScope | quote }}
+        {{- end }}
+        {{- if .Values.domainscope.env.sarifProductId }}
+        - name: DOMAINSCOPE_SARIF_PRODUCT_ID
+          value: {{ .Values.domainscope.env.sarifProductId | quote }}
+        {{- else }}
+        ## Если в env-value пусто — пробуем взять из Secret. В umbrella mode
+        ## там лежит productId default-проекта, прокинутый master-secrets.yaml.
+        - name: DOMAINSCOPE_SARIF_PRODUCT_ID
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.secretsName" . }}
+              key: sarifProductId
+              optional: true
+        {{- end }}
+        - name: DOMAINSCOPE_NETBOX_ENABLED
+          value: {{ .Values.domainscope.env.netboxEnabled | quote }}
+        {{- if .Values.domainscope.env.netboxApiEndpoint }}
+        - name: DOMAINSCOPE_NETBOX_API_ENDPOINT
+          value: {{ .Values.domainscope.env.netboxApiEndpoint | quote }}
+        - name: DOMAINSCOPE_NETBOX_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.secretsName" . }}
+              key: netboxApiToken
+              optional: true
+        {{- end }}
+        {{- if .Values.domainscope.env.nucleiEnabled }}
+        - name: DOMAINSCOPE_NUCLEI_ENABLED
+          value: {{ .Values.domainscope.env.nucleiEnabled | quote }}
+        {{- end }}
+        {{- if .Values.domainscope.env.nucleiTemplatesPaths }}
+        - name: DOMAINSCOPE_NUCLEI_TEMPLATES_PATHS
+          value: {{ .Values.domainscope.env.nucleiTemplatesPaths | quote }}
+        {{- end }}
+        {{- if .Values.domainscope.env.nucleiTags }}
+        - name: DOMAINSCOPE_NUCLEI_TAGS
+          value: {{ .Values.domainscope.env.nucleiTags | quote }}
+        {{- end }}
+        {{- if .Values.domainscope.env.nucleiConcurrency }}
+        - name: DOMAINSCOPE_NUCLEI_CONCURRENCY
+          value: {{ .Values.domainscope.env.nucleiConcurrency | quote }}
+        {{- end }}
+        {{- if eq .Values.domainscope.env.openvasEnabled "true" }}
+        - name: DOMAINSCOPE_OPENVAS_ENABLED
+          value: "true"
+        - name: DOMAINSCOPE_OPENVAS_HOST
+          value: {{ tpl (.Values.domainscope.env.openvasHost | default "") . | quote }}
+        - name: DOMAINSCOPE_OPENVAS_PORT
+          value: {{ .Values.domainscope.env.openvasPort | quote }}
+        - name: DOMAINSCOPE_OPENVAS_USERNAME
+          value: {{ .Values.domainscope.env.openvasUsername | quote }}
+        - name: DOMAINSCOPE_OPENVAS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.secretsName" . }}
+              key: openvasPassword
+              optional: true
+        {{- if .Values.domainscope.env.timeLoopOpenvas }}
+        - name: DOMAINSCOPE_TIME_LOOP_OPENVAS
+          value: {{ .Values.domainscope.env.timeLoopOpenvas | quote }}
+        {{- end }}
+        {{- end }}
+        {{- if eq .Values.domainscope.env.zapEnabled "true" }}
+        - name: DOMAINSCOPE_ZAP_ENABLED
+          value: "true"
+        ## ZAP_INSTANCES_JSON contains the API key — read from Secret.
+        ## In umbrella mode the secret has it pre-wired; in standalone mode
+        ## the operator must populate it (see secrets.zapInstancesJson value).
+        - name: DOMAINSCOPE_ZAP_INSTANCES_JSON
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.secretsName" . }}
+              key: zapInstancesJson
+              optional: true
+        - name: DOMAINSCOPE_ZAP_ACTIVE_SCAN_POLICY
+          value: {{ .Values.domainscope.env.zapActiveScanPolicy | quote }}
+        - name: DOMAINSCOPE_ZAP_AJAX_SPIDER_TIMEOUT
+          value: {{ .Values.domainscope.env.zapAjaxSpiderTimeout | quote }}
+        - name: DOMAINSCOPE_ZAP_RESCAN_PERIOD
+          value: {{ .Values.domainscope.env.zapRescanPeriod | quote }}
+        {{- end }}
+        ## --- Hub Scope API: domainscope тянет scope (список доменов для скана)
+        ## из hub backend, не из env. Включается auto когда hub есть в кластере. ---
+        {{- if eq (default "false" .Values.domainscope.env.hubEnabled) "true" }}
+        - name: DOMAINSCOPE_HUB_ENABLED
+          value: "true"
+        - name: DOMAINSCOPE_HUB_API_ENDPOINT
+          value: {{ tpl (.Values.domainscope.env.hubApiEndpoint | default "") . | quote }}
+        - name: DOMAINSCOPE_HUB_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.secretsName" . }}
+              key: hubApiToken
+        - name: DOMAINSCOPE_HUB_PROJECT_IDS
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chart.secretsName" . }}
+              key: hubProjectId
+        {{- end }}
+        - name: KUBERNETES_CLUSTER_DOMAIN
+          value: {{ .Values.kubernetesClusterDomain | quote }}
+        resources:
+          {{- toYaml .Values.domainscope.resources | nindent 10 }}
+        securityContext:
+          capabilities:
+            add:
+            - NET_RAW
+            - NET_ADMIN
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "pgrep -f domainscope || exit 1"
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          failureThreshold: 2
+          timeoutSeconds: 15
+        volumeMounts:
+        - mountPath: /var/log/domain-scope
+          name: domainscope-logs
+        - mountPath: /app/nuclei-templates
+          name: nuclei-templates
+      nodeSelector:
+        {{- toYaml .Values.domainscope.nodeSelector | nindent 8 }}
+      tolerations:
+        {{- toYaml .Values.domainscope.tolerations | nindent 8 }}
+      topologySpreadConstraints:
+        {{- toYaml .Values.domainscope.topologySpreadConstraints | nindent 8 }}
+      restartPolicy: Always
+      volumes:
+      - name: domainscope-logs
+        persistentVolumeClaim:
+          claimName: {{ include "chart.fullname" . }}-domainscope-logs
+      - name: nuclei-templates
+        emptyDir: {}
