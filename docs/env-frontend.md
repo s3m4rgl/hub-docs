@@ -8,7 +8,7 @@
 | `REACT_APP_KEYCLOAK_URL` | URL Keycloak для OIDC-логина (SSO) | URL | `""` (chart); `http://localhost:8083` (.env.example) | Только при SSO |
 | `REACT_APP_KEYCLOAK_REALM` | Realm Keycloak | строка | `""` (chart); `securityhub` (.env.example) | Только при SSO |
 | `REACT_APP_KEYCLOAK_CLIENT_ID` | client_id Keycloak | строка | `""` (chart); `securityhub` (.env.example) | Только при SSO |
-| `REACT_APP_NETBOX_BASE_URL` | Если задан — IP в карточке finding'а становятся ссылками на поиск в NetBox (`${URL}/search/?q=${ip}`) | URL или пусто | `""` | Нет |
+| `REACT_APP_NETBOX_BASE_URL` | Если задан — IP в карточке находка'а становятся ссылками на поиск в NetBox (`${URL}/search/?q=${ip}`) | URL или пусто | `""` | Нет |
 | `REACT_APP_APP_ENV` | Окружение. `development` показывает dev-баннер и кнопку dev-логина; `production` их скрывает | `development` \| `production` | `production` (entrypoint fallback); `development` (.env.example) | Нет |
 | `REACT_APP_AUTH_MODE` | Заявленный режим аутентификации. **Фактически не влияет** на фронт (см. ниже) | `LOCAL` \| `SSO` | `LOCAL` [chart] | Нет (no-op) |
 

@@ -1,6 +1,6 @@
 # Интеграция с Jira
 
-Hub умеет создавать задачи в Jira, переводить их по статусам, синхронизировать обратно (reverse-sync) и автоматически закрывать findings при подтверждённом фиксе. Конфигурация на двух уровнях:
+Hub умеет создавать задачи в Jira, переводить их по статусам, синхронизировать обратно (reverse-sync) и автоматически закрывать находки при подтверждённом фиксе. Конфигурация на двух уровнях:
 
 - **Глобально** — env vars (feature flags, SSRF-защита, расписания)
 - **Per-project** — `jira_config` в проекте (Hub UI → Project → Jira settings)
@@ -40,9 +40,9 @@ Hub умеет создавать задачи в Jira, переводить и�
 | `JIRA_BASE_URL_ALLOWLIST`            | —       | Whitelist хостов (CSV) — дополнительная защита от SSRF                                       |
 | `FEATURE_JIRA_REVERSE_SYNC`          | `false` | Включить периодический reverse-sync worker                                                   |
 | `JIRA_REVERSE_SYNC_INTERVAL_MINUTES` | `60`    | Интервал проверки статусов                                                                   |
-| `JIRA_REVERSE_SYNC_BATCH_SIZE`       | `500`   | Сколько findings проверяется за tick                                                         |
+| `JIRA_REVERSE_SYNC_BATCH_SIZE`       | `500`   | Сколько находки проверяется за tick                                                         |
 | `JIRA_SYNC_WORKERS`                  | `4`     | Параллелизм очереди auto-create                                                              |
-| `FEATURE_AUTO_VERIFY_FIXES`          | `false` | Auto-close findings, отсутствующих в новом отчёте                                            |
+| `FEATURE_AUTO_VERIFY_FIXES`          | `false` | Auto-close находки, отсутствующих в новом отчёте                                            |
 
 ## Per-project конфигурация (jira_config)
 
@@ -95,7 +95,7 @@ Hub умеет создавать задачи в Jira, переводить и�
 
 ### Полная автоматизация (`partial_automation: false`)
 
-Hub самостоятельно создаёт тикет через REST API.
+Hub сам создаёт задачу через REST API Jira.
 
 **Что нужно:**
 
@@ -107,11 +107,11 @@ Hub самостоятельно создаёт тикет через REST API.
 
 **Как это происходит:**
 
-1. Hub получает finding со статусом `confirmed`
+1. Находка переходит в состояние `confirmed`
 2. Если `auto_create_on_confirm: true` — ставит задачу в очередь
 3. Worker формирует payload (см. шаблоны ниже), шлёт `POST /rest/api/2/issue`
 4. После создания — выполняет `initial_transition_chain` (например, `In Progress` → `Code Review`)
-5. Сохраняет `jira_issue_key` в БД, finding получает ссылку в UI
+5. Сохраняет `jira_issue_key` в БД, находка получает ссылку в UI
 
 ### Частичная автоматизация (`partial_automation: true`)
 
@@ -214,9 +214,9 @@ partial_description_template: |
 
 Включается `FEATURE_JIRA_REVERSE_SYNC=true`. Раз в `JIRA_REVERSE_SYNC_INTERVAL_MINUTES` worker:
 
-1. Выбирает batch findings с `jira_issue_key IS NOT NULL` и не закрытых
+1. Выбирает batch находки с `jira_issue_key IS NOT NULL` и не закрытых
 2. Для каждого — `GET /rest/api/2/issue/<key>` → читает текущий статус
-3. Если статус ∈ `reverse_sync_done_statuses` (default: `Done`, `Closed`, `Resolved`, `Fixed`) — закрывает finding в Hub со статусом `fixed`
+3. Если статус ∈ `reverse_sync_done_statuses` (default: `Done`, `Closed`, `Resolved`, `Fixed`) — закрывает находку в Hub, проставляя состояние `fixed`
 4. Логирует action в audit-log
 
 **Отключить per-project:**
@@ -233,7 +233,7 @@ partial_description_template: |
 
 ## Автоматическое закрытие исправленных находок
 
-Замыкает цикл: после деплоя фикса свежий отчёт сканера не содержит этот finding — Hub помечает его как `fixed`.
+Замыкает цикл: после деплоя фикса свежий отчёт сканера не содержит этот находка — Hub помечает его как `fixed`.
 
 ### Тройная защита
 
@@ -243,7 +243,7 @@ partial_description_template: |
 2. На проекте: `projects.auto_verify_fixes_enabled = true`
 3. При загрузке отчёта: form-параметр `verify_fixes=true`
 
-Без всех трёх частичный скан (например, только одного контейнера) может массово закрыть валидные findings.
+Без всех трёх частичный скан (например, только одного контейнера) может массово закрыть валидные находки.
 
 ### Что происходит
 
@@ -326,7 +326,7 @@ JIRA_BASE_URL_ALLOWLIST=jira.example.com,jira.partner.com
 
 ### Тестовое создание issue
 
-После настройки `jira_config` переведите в Hub любой finding в статус `confirmed` — worker попытается создать тикет в Jira. Результат и ошибки видны в логах worker:
+После настройки `jira_config` переведите в Hub любой находка в статус `confirmed` — worker попытается создать задача в Jira. Результат и ошибки видны в логах worker:
 
 ```bash
 docker compose logs worker | grep -i jira

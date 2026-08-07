@@ -106,7 +106,7 @@
 | `LLM_MODEL` | Имя модели | строка | `glm-4-plus` | оба |
 | `LLM_DRY_RUN` | Не обращаться к LLM (заглушка) | `true` \| `false` | `false` [code] / `true` [chart] | оба |
 | `LLM_FALSE_POSITIVE_THRESHOLD` | Порог уверенности для отсева false-positive | float `0..1` | `0.9` | оба |
-| `LLM_WORKERS` | Кол-во LLM-воркеров | целое | `5` [code] | оба |
+| `LLM_WORKERS` | Кол-во LLM-worker | целое | `5` [code] | оба |
 | `LLM_PROMPTS_DIR` | Каталог с промптами | путь | `""` | оба |
 | `LLM_REQUEST_TIMEOUT_SECONDS` | Таймаут запроса к LLM | целое (сек) | `180` | оба |
 | `SANDBOX_TYPE` | Тип песочницы | `""` (выкл) \| `docker` \| `kubernetes` | `""` [code] / worker `kubernetes` [chart] | worker |
@@ -188,7 +188,7 @@
 | Переменная | Назначение | Значения | По умолчанию | Компонент |
 |---|---|---|---|---|
 | `FEATURE_DUAL_VERIFY` | Мастер-флаг dual_confirm flow | `true` \| `false` | `false` | оба |
-| `DOMAINSCOPE_VERIFY_URL` | Endpoint сканера для POST verify-finding. В prod обязан `https://` | URL | `""` | оба |
+| `DOMAINSCOPE_VERIFY_URL` | Endpoint сканера для POST verify-находка. В prod обязан `https://` | URL | `""` | оба |
 | `DOMAINSCOPE_VERIFY_API_KEY` | Outbound API-key Hub→DomainScope | строка (секрет) | `""` | оба |
 | `DOMAINSCOPE_VERIFY_HMAC_SECRET` | HMAC-подпись исходящих запросов | строка (секрет) | `""` | оба |
 | `SCANNER_CALLBACK_API_KEY` | Inbound API-key для callback от сканера | строка (секрет) | `""` | оба |

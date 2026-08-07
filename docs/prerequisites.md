@@ -81,7 +81,7 @@ Hub и DomainScope без сканеров-обёрток достаточно *
 | ------------------ | ------------------- | --------------------- |
 | Docker Hub / GHCR  | Образы              | Да (HTTPS_PROXY)      |
 | Keycloak realm     | OIDC discovery      | Если Keycloak внешний |
-| Jira instance      | Создание тикетов    | Да                    |
+| Jira instance      | Создание задач    | Да                    |
 | Telegram Bot API   | Уведомления         | Да                    |
 | Mattermost webhook | Уведомления         | Да                    |
 | NetBox             | Sync периметра      | Да                    |
@@ -139,7 +139,7 @@ max_connections = 200
 3. **Secret backup** — Vault snapshots
 4. **Backup-тест** — раз в квартал восстановите из backup на staging и проверьте, что Hub стартует и видит данные
 
-Подробнее: [`operations.md`](operations.md).
+Подробнее: [ 18 ](operations.md).
 
 ## Что нужно подготовить ДО установки
 

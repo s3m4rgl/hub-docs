@@ -79,7 +79,7 @@ sudo setcap cap_net_raw+ep /usr/local/bin/domain-scope
 
 - Берёт все обнаруженные HTTP/HTTPS endpoints (порты 80, 443, 8080, 8443 и любые с HTTP-fingerprint)
 - Прогоняет встроенный nuclei с подключёнными templates
-- Каждое срабатывание (info/low/medium/high/critical) → SARIF finding
+- Каждое срабатывание (info/low/medium/high/critical) → SARIF находка
 
 **Включение:**
 
@@ -152,7 +152,7 @@ DOMAINSCOPE_OPENVAS_IP_SCOPE=public
 
 - Для каждого endpoint с HTTPS-портом запрашивает certificate
 - Извлекает: issuer, subject, SAN, expiry date, signature algo
-- Генерит findings:
+- Генерит находки:
   - `LOW` — cert expires in 30 days (`DOMAINSCOPE_TLSX_CERT_EXPIRY_DAYS`)
   - `MEDIUM` — cert expires in 7 days
   - `HIGH` — cert expired
@@ -180,7 +180,7 @@ DOMAINSCOPE_TLSX_SARIF_API_TOKEN=<...>
 
 - Использует внешние ZAP daemon'ы по REST API
 - Запускает full scan (spider + active scan) по обнаруженным web-приложениям
-- Каждое срабатывание → SARIF finding
+- Каждое срабатывание → SARIF находка
 
 **Включение:**
 
@@ -324,5 +324,5 @@ LIMIT 20;
 
 ## Связанные документы
 
-- [`domainscope-netbox.md`](domainscope-netbox.md) — NetBox sync
-- [`domainscope-trails.md`](domainscope-trails.md) — discovery trails
+- [ 88 ](domainscope-netbox.md) — NetBox sync
+- [ 89 ](domainscope-trails.md) — discovery trails

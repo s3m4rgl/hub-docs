@@ -85,7 +85,7 @@ echo '<JWT>' | cut -d. -f2 | base64 -d 2>/dev/null | jq
 
 ## Jira
 
-### Создание тикета: `401 Unauthorized`
+### Создание задачи: `401 Unauthorized`
 
 - Cloud Jira: пароль — это **API token**, не пароль аккаунта
 - Self-hosted: PAT истёк (Jira DC)
@@ -220,14 +220,14 @@ nginx.ingress.kubernetes.io/proxy-body-size: 200m
 
 ### `422 Unprocessable Entity: limit exceeded`
 
-SARIF превысил один из hard-лимитов (см. [`integration-sarif.md`](integration-sarif.md)):
+SARIF превысил один из hard-лимитов (см. [ 112 ](integration-sarif.md)):
 
 - Разбейте отчёт на несколько (несколько runs в разных файлах)
 - Уменьшите количество results (фильтр на стороне сканера)
 
 ### Findings не дедуплицируются
 
-Между прогонами сканера `rule_id` и `location.physicalLocation.artifactLocation.uri` должны быть стабильны. Если сканер генерит уникальные ID каждый раз — finding'и будут размножаться.
+Между прогонами сканера `rule_id` и `location.physicalLocation.artifactLocation.uri` должны быть стабильны. Если сканер генерит уникальные ID каждый раз — находка'и будут размножаться.
 
 Проверка dedup_hash:
 
@@ -242,7 +242,7 @@ ORDER BY COUNT(*) DESC;
 
 ### Severity всегда INFO
 
-Сканер не выставляет `level` / `properties.severity` — выставьте поле в SARIF на стороне сканера (см. [`integration-sarif.md`](integration-sarif.md)).
+Сканер не выставляет `level` / `properties.severity` — выставьте поле в SARIF на стороне сканера (см. [ 117 ](integration-sarif.md)).
 
 ### `500 Internal Server Error — Failed to save file` при upload
 
@@ -510,8 +510,8 @@ docker compose exec postgres psql -U securityhub -d securityhub -c \
 
 ## Связанные документы
 
-- [`operations.md`](operations.md) — backup, мониторинг
-- [`upgrades.md`](upgrades.md) — rollback при неудачном обновлении
+- [ 185 ](operations.md) — backup, мониторинг
+- [ 186 ](upgrades.md) — rollback при неудачном обновлении
 
 
 ## Если это не неисправность

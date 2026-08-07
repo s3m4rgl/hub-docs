@@ -11,7 +11,7 @@
 | `VMS_API_URL` | Базовый URL Hub API (отправка находок, запрос `scan-enabled`) | URL (обычно с суффиксом `/api/v1`) | — | **Да (fatal)** |
 | `VMS_API_KEY` | API-ключ Service Account в Hub (секрет) | строка | — | **Да (fatal)** |
 | `DATABASE_DSN` | DSN PostgreSQL собственной БД сканера (секрет) | `postgres://…` / `host=… user=…` | — | **Да (fatal)** |
-| `SCAN_WORKERS` | Кол-во параллельных воркеров сканирования | целое ≥1 | `5` [code] / `3` [chart] | Нет |
+| `SCAN_WORKERS` | Кол-во параллельных worker сканирования | целое ≥1 | `5` [code] / `3` [chart] | Нет |
 | `SCAN_SCHEDULE_INTERVAL` | Период опроса/планирования сканов | Go-duration (`30s`, `5m`) | `5m` [code] / `300s` [chart] | Нет |
 | `LOG_LEVEL` | Уровень логирования | `debug` \| `info` \| `warn` \| `error` | `info` | Нет |
 | `RESCAN_API_KEY` | Pre-shared secret для hub→scanner webhook `/api/v1/rescan`. **Пуст → rescan-сервер не запускается** (no-auth недопустим) | строка (секрет) | пусто | Нет (нужна для rescan) |

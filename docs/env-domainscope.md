@@ -28,7 +28,7 @@
 
 | Переменная | Назначение | Значения | По умолчанию |
 |---|---|---|---|
-| `DOMAINSCOPE_SCANNER_WORKERS` | Число параллельных воркеров скана | uint | `20` |
+| `DOMAINSCOPE_SCANNER_WORKERS` | Число параллельных worker скана | uint | `20` |
 | `DOMAINSCOPE_SCANNER_MIN_RATE` | nmap `--min-rate`, пакетов/сек | uint, `0` = выкл | `500` |
 | `DOMAINSCOPE_SCANNER_MAX_UNKNOWN_PORTS_PER_IP` | Порог аномалии: ≥N портов `unknown`+пустой fingerprint на одном IP → отбрасываются как scan-артефакт | uint, `0` = фильтр выкл | `20` |
 | `DOMAINSCOPE_SCANNER_SCAN_TYPE` | Тип nmap-скана портов (см. ниже) | `syn` \| `connect` | `syn` |
@@ -198,7 +198,7 @@
 | `DOMAINSCOPE_SCOPE_FAIL_OPEN` | При недоступности Hub scope: `false` = fail-CLOSED (пропустить цикл, безопасно), `true` = fail-OPEN (скан по config-доменам, риск out-of-scope) | bool | `false` |
 | `DOMAINSCOPE_PROBE_HMAC_SECRET` | HMAC-секрет для `POST /api/v1/probe`. Не задан → `/probe` 401 (fail-closed). Секрет | строка | пусто |
 | `DOMAINSCOPE_VERIFY_API_KEY` | Включает inbound `POST /api/v1/verify-finding` (dual_verify). Секрет | строка | пусто |
-| `DOMAINSCOPE_VERIFY_HMAC_SECRET` | HMAC inbound verify-finding. Обязателен если задан `VERIFY_API_KEY` (иначе fatal). Секрет | строка | пусто |
+| `DOMAINSCOPE_VERIFY_HMAC_SECRET` | HMAC inbound verify-находка. Обязателен если задан `VERIFY_API_KEY` (иначе fatal). Секрет | строка | пусто |
 | `DOMAINSCOPE_HUB_CALLBACK_API_KEY` | API-ключ исходящего callback в Hub. Обязателен при verify. Секрет | строка | пусто |
 | `DOMAINSCOPE_HUB_CALLBACK_HMAC_SECRET` | HMAC исходящего callback. Обязателен при verify. Секрет | строка | пусто |
 | `DOMAINSCOPE_HUB_CALLBACK_HOSTS` | Allowlist хостов callback по HTTPS (anti-SSRF) | CSV хостов | пусто |

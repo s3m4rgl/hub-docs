@@ -41,7 +41,7 @@ DOMAINSCOPE_TRUSTED_IP_TAGS=internal,production   # доп. теги для ма
 
 ### Метаданные
 
-В БД DomainScope для каждого IP сохраняются NetBox-теги, которые потом попадают в SARIF (как `properties.netbox_tags`). В Hub их видно в карточке finding'а.
+В БД DomainScope для каждого IP сохраняются NetBox-теги, которые потом попадают в SARIF (как `properties.netbox_tags`). В Hub их видно в карточке находка'а.
 
 Полезно: `owner_team`, `environment`, `compliance_zone` теги в NetBox автоматически переедут в Hub.
 
@@ -163,7 +163,7 @@ Token будет в формате `nbt_xxxxxxxxxxxxxx`.
 | --------------- | ------------------------------------------------------------------------- |
 | **NetBox**      | Источник правды по инфраструктуре. Кто чем владеет, какие IP/домены живут |
 | **DomainScope** | Активная разведка. Что НА САМОМ ДЕЛЕ доступно снаружи                     |
-| **Hub**         | Аналитика findings + workflow по фиксам                                   |
+| **Hub**         | Аналитика находки + workflow по фиксам                                   |
 
 Идеальная схема: NetBox = inventory, DomainScope = recon, Hub = vuln-management. Каждый слой знает только свою часть.
 
@@ -222,5 +222,5 @@ INFO Discovery cycle finished
 
 ## Связанные документы
 
-- [`integration-netbox.md`](integration-netbox.md) — NetBox sync со стороны Hub
-- [`domainscope-trails.md`](domainscope-trails.md) — provenance в DomainScope
+- [ 46 ](integration-netbox.md) — NetBox sync со стороны Hub
+- [ 47 ](domainscope-trails.md) — provenance в DomainScope

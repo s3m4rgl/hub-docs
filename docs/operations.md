@@ -243,7 +243,7 @@ docker compose logs domain-scope | grep "cycle"
 Удаляются и файл, и запись в базе. Проверить, что именно будет удалено, не
 удаляя, можно через `CLEANUP_DRY_RUN=true`.
 
-Конфиг — см. [`configuration.md`](configuration.md) → `CLEANUP_*`.
+Конфиг — см. [ 52 ](configuration.md) → `CLEANUP_*`.
 
 ### Refresh tokens
 
@@ -293,7 +293,7 @@ bantime = 3600
 
 - OS: `unattended-upgrades` (Ubuntu/Debian) или `dnf-automatic` (RHEL)
 - Docker base-images: пересобирайте раз в месяц с свежим `apk upgrade` / `apt upgrade`
-- Hub: следите за релизами, обновляйте раз в 2-4 недели (см. [`upgrades.md`](upgrades.md))
+- Hub: следите за релизами, обновляйте раз в 2-4 недели (см. [ 60 ](upgrades.md))
 
 ## Производительность
 
@@ -334,7 +334,7 @@ EXPLAIN ANALYZE SELECT ... FROM findings WHERE ...;
 2. **Stabilize**: переключите на staging если есть; иначе announce maintenance
 3. **Restore data**: из последнего бэкапа (см. выше)
 4. **Restore service**: redeploy с известно-рабочей версии
-5. **Verify**: smoke-tests (login, list findings, upload SARIF)
+5. **Verify**: smoke-tests (login, list находки, upload SARIF)
 6. **Resume traffic**: переключайте обратно
 7. **Postmortem**: что пошло не так, как избежать впредь
 
@@ -342,8 +342,8 @@ RTO целевой: < 4 часа. RPO: < 24 часа (с ежедневными 
 
 ## Связанные документы
 
-- [`upgrades.md`](upgrades.md) — обновления и миграции
-- [`troubleshooting.md`](troubleshooting.md) — типовые проблемы
+- [ 62 ](upgrades.md) — обновления и миграции
+- [ 63 ](troubleshooting.md) — типовые проблемы
 
 
 Что именно переживает отказ, а что нет, и какие резервные копии обязательны —

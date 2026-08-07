@@ -1,6 +1,6 @@
 # AI-триаж и песочница
 
-Hub использует LLM для триажа findings: оценить, является ли finding false-positive, предложить план верификации, опционально выполнить активную проверку через sandbox (запустить `nmap`/`curl`/`nuclei` против цели).
+Hub использует LLM для триажа находки: оценить, является ли находка false-positive, предложить план верификации, опционально выполнить активную проверку через sandbox (запустить `nmap`/`curl`/`nuclei` против цели).
 
 ## Архитектура
 
@@ -111,13 +111,13 @@ SANDBOX_TYPE=    # пусто = выключен
 
 После рестарта worker:
 
-- Worker начнёт триажить новые findings
-- В UI Hub в карточке finding появится секция `LLM Analysis` с reasoning и confidence
-- При `is_false_positive=true && confidence ≥ threshold` finding помечается `false_positive` автоматически
+- Worker начнёт триажить новые находки
+- В UI Hub в карточке находка появится секция `LLM Analysis` с reasoning и confidence
+- При `is_false_positive=true && confidence ≥ threshold` находка помечается `false_positive` автоматически
 
 ## Включение Sandbox (активная верификация)
 
-Sandbox запускает команды (nmap/curl/nuclei) против цели finding. Используется когда нужна реальная проверка — например, "точно ли порт 22 открыт".
+Sandbox запускает команды (nmap/curl/nuclei) против цели находка. Используется когда нужна реальная проверка — например, "точно ли порт 22 открыт".
 
 ### Docker-режим (dev / single-host)
 
@@ -162,7 +162,7 @@ Hub создаёт `Job` в указанном namespace с RBAC и NetworkPolic
 
 **Python намеренно исключён** — слишком широкая поверхность атак.
 
-LLM формирует команду из allowlist. Если LLM попытается выполнить что-то вне списка — sandbox откажет, finding получит флаг `sandbox_refused`.
+LLM формирует команду из allowlist. Если LLM попытается выполнить что-то вне списка — sandbox откажет, находка получит флаг `sandbox_refused`.
 
 ### Изоляция
 
@@ -194,17 +194,17 @@ LLM формирует команду из allowlist. Если LLM попыта�
 
 - ✅ Регулярно проверять `SANDBOX_OUTPUT_LIMIT_KB` (защита от prompt-injection через большой output)
 - ✅ Использовать отдельный API-key для LLM-провайдера, ротировать раз в квартал
-- ✅ Мониторить расходы (LLM-провайдеры могут стоить дорого при росте findings)
+- ✅ Мониторить расходы (LLM-провайдеры могут стоить дорого при росте находки)
 - ✅ Sandbox-образ — приватный registry, тегированный по SHA (не `:latest`)
 
 ## Стоимость
 
-Грубая оценка для 1000 findings/день:
+Грубая оценка для 1000 находки/день:
 
-- Multi-turn dialog: ~10k input + 2k output tokens на finding
+- Многошаговый диалог: примерно 10 тыс. входных и 2 тыс. выходных токенов на одну находку
 - Sandbox: добавляет ещё ~5k tokens (для парсинга stdout)
 
-При $1.5/1M output tokens (glm-4-plus) и 1000 findings:
+При $1.5/1M output tokens (glm-4-plus) и 1000 находки:
 
 - Без sandbox: ~$3-5/день
 - С sandbox: ~$8-12/день
@@ -219,7 +219,7 @@ LLM формирует команду из allowlist. Если LLM попыта�
 LLM_DRY_RUN=true
 ```
 
-Hub будет логировать промпт и реальный ответ, но не помечать finding автоматически. Полезно для калибровки `LLM_FALSE_POSITIVE_THRESHOLD`.
+Hub будет логировать промпт и реальный ответ, но не помечать находка автоматически. Полезно для калибровки `LLM_FALSE_POSITIVE_THRESHOLD`.
 
 ## Мониторинг
 
