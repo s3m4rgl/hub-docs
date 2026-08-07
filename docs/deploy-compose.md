@@ -224,3 +224,9 @@ docker compose restart backend
 | `docker pull denied`    | Не залогинены в registry. `docker login <registry>`                               |
 
 Полный troubleshooting: [Диагностика](troubleshooting.md).
+
+
+## Что дальше
+
+Hub запущен. Как довести его до состояния, в котором появляются находки, —
+[Первые шаги после установки](first-steps.md).

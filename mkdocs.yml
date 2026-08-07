@@ -80,6 +80,7 @@ nav:
       - Ручная установка на k3s: deploy-k3s-manual.md
       - Docker Compose: deploy-compose.md
       - Kubernetes и Helm: deploy-kubernetes.md
+      - Первые шаги после установки: first-steps.md
   - Конфигурация:
       - Обзор и соглашения: configuration.md
       - Hub — backend и worker: env-hub.md

@@ -181,3 +181,8 @@ sudo ./install.sh --ingress nginx --tls selfsigned
 sudo ./install.sh --domain hub.poc.local --values charts/hub-platform/values-poc.yaml
 sudo ./install.sh --dns "10.0.0.53 10.0.0.54"
 ```
+
+
+## Что дальше
+
+[Первые шаги после установки](first-steps.md).
