@@ -1,0 +1,32 @@
+name: Image pins exist in the registry
+
+# Каждый пин образа — обещание про удалённый реестр, и его может нарушить чужое
+# действие (тег так и не опубликовали, тег удалили) без единого коммита здесь.
+# Поэтому проверка механическая, а не «на внимательность ревьюера».
+#
+# Прецедент — SecurityScanHub#172: оба документированных пути установки падали на
+# `docker pull`, потому что дефолты поставки разошлись с реально опубликованным:
+# compose подставлял 0.24 (у `sshub-backend` такого тега не было никогда), чарт
+# был запинен на 0.25 (нет у backend/worker/iac-scanner). Первая же установка
+# получала ImagePullBackOff, а доки при этом выглядели корректными.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  # Пин может стать битым без коммитов — если тег удалят из реестра. Раз в сутки
+  # проверяем и без изменений в репозитории.
+  schedule:
+    - cron: "17 6 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check every pinned tag against Docker Hub
+        run: bash scripts/check-image-tags.sh

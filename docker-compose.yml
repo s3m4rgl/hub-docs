@@ -33,7 +33,7 @@ services:
     restart: unless-stopped
 
   backend:
-    image: dexionius/sshub-backend:${HUB_VERSION:-0.24}
+    image: dexionius/sshub-backend:${HUB_VERSION:-0.30}
     container_name: sshub-backend
     environment:
       # Локальная аутентификация: вход по логину/паролю, Keycloak не нужен.
@@ -70,7 +70,7 @@ services:
     restart: unless-stopped
 
   worker:
-    image: dexionius/sshub-worker:${HUB_VERSION:-0.24}
+    image: dexionius/sshub-worker:${HUB_VERSION:-0.30}
     container_name: sshub-worker
     environment:
       APP_ENV: development
@@ -88,7 +88,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: dexionius/sshub-frontend:${HUB_VERSION:-0.24}
+    image: dexionius/sshub-frontend:${HUB_VERSION:-0.30}
     container_name: sshub-frontend
     environment:
       # Адрес backend API, который SPA вызывает из браузера. Если меняете
@@ -153,7 +153,7 @@ services:
     restart: unless-stopped
 
   domainscope:
-    image: dexionius/domain-scope:${DS_VERSION:-0.24}
+    image: dexionius/domain-scope:${DS_VERSION:-0.30}
     container_name: ds-scanner
     # Entrypoint-обёртка: ждёт scanner.env от bootstrap, экспортирует токен
     # и product_id, затем запускает /domain-scope daemon run.

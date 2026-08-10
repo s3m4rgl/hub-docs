@@ -70,7 +70,7 @@ docker compose up -d
 docker compose restart backend
 ```
 
-Версия образов задаётся через `${HUB_VERSION:-0.24}` (backend/worker/frontend) и `${DS_VERSION:-0.24}` (domainscope). По умолчанию подтягивается тег `0.24`; задайте `HUB_VERSION`/`DS_VERSION` в `.env`, чтобы зафиксировать другую версию.
+Версия образов задаётся через `${HUB_VERSION:-0.30}` (backend/worker/frontend) и `${DS_VERSION:-0.30}` (domainscope). По умолчанию подтягивается тег `0.30`; задайте `HUB_VERSION`/`DS_VERSION` в `.env`, чтобы зафиксировать другую версию.
 
 Стек поднимает (компоненты):
 

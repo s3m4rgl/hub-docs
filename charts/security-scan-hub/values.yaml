@@ -58,7 +58,7 @@ backend:
     args: []
     image:
       repository: dexionius/sshub-backend
-      tag: "0.25"
+      tag: "0.30"
       pullPolicy: IfNotPresent
     resources:
       requests:
@@ -112,7 +112,7 @@ worker:
     args: []
     image:
       repository: dexionius/sshub-worker
-      tag: "0.25"
+      tag: "0.30"
       pullPolicy: IfNotPresent
     resources:
       requests:
@@ -156,7 +156,7 @@ frontend:
   frontend:
     image:
       repository: dexionius/sshub-frontend
-      tag: "0.25"
+      tag: "0.30"
       pullPolicy: IfNotPresent
     ## Pod securityContext. По умолчанию — nginx-uid 101 (non-root).
     ## Если образ копирует бандл как root:root, runtime-инъекция env через
@@ -200,7 +200,7 @@ iacScanner:
   enabled: false
   image:
     repository: dexionius/sshub-iac-scanner
-    tag: "0.25"
+    tag: "0.30"
   env:
     ## tpl-aware: при standalone install резолвится в backend этого же релиза.
     ## При umbrella установке переопределяется на полный internal-DNS адрес.
