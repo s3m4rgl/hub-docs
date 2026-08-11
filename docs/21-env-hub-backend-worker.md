@@ -175,6 +175,9 @@
 | `FRONTEND_URL` | URL фронта (редиректы, ссылки, fallback callback) | URL | `http://localhost:3000` [code] / `https://hub.example.com` [chart] | оба |
 | `STORAGE_PATH` | Каталог хранения отчётов | путь | `./storage` [code] / `/app/storage/reports` [chart] | оба |
 | `LOGS_PATH` | Каталог логов | путь | `./logs` | оба |
+| `LOG_LEVEL` | Уровень логов; переопределяет выбор по `APP_ENV` | `debug` \| `info` \| `warn` \| `error` | `debug` при `APP_ENV=development`, иначе `info` | оба |
+| `LOG_FORMAT` | Формат логов | `json` \| `console` | `json` в production | оба |
+| `LOG_FILE_SINK_ENABLED` | Писать ли логи в файл (поверх stdout). **В k8s ставьте `false`** — см. [17. Операции → Логирование](17-operations.md#в-kubernetes-выключайте-файловый-лог-синк) | `true` \| `false` | `true` | оба |
 | `LOG_MAX_SIZE_MB` | Размер лог-файла до ротации | целое ≥1 | `50` | оба |
 | `LOG_MAX_BACKUPS` | Кол-во хранимых ротированных логов | целое ≥0 | `5` | оба |
 | `LOG_MAX_AGE_DAYS` | Макс. возраст ротированного лога | целое ≥0 | `30` | оба |
