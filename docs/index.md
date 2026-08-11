@@ -40,6 +40,9 @@ Hub работает и сам по себе: если сканеры и кон�
 - **Настраиваете интеграции** — [SSO](integration-sso.md),
   [Jira](integration-jira.md), [уведомления](integration-notifications.md),
   [загрузка отчётов](integration-sarif.md).
+- **Запускаете обследование периметра** — [Связка DomainScope и
+  Hub](perimeter-integration.md): проект, права, периметр сканирования и
+  обмен данными в обе стороны от начала до конца.
 - **Эксплуатируете** — [Эксплуатация](operations.md),
   [Обновления](upgrades.md), [Диагностика](troubleshooting.md).
 

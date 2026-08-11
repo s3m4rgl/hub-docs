@@ -50,27 +50,36 @@ DomainScope формирует SARIF из результатов каждого 
 
 ```
 POST https://hub.example.com/api/v1/products/<product_id>/reports
-Authorization: Bearer <api_key>
+X-API-Key: <ключ сервисной учётной записи>
 ```
 
 DomainScope использует тот же механизм, что и любой внешний сканер. Hub относится к нему как к обычному SARIF-источнику.
 
 **2. Scope proposals (DomainScope → Hub):**
 
-Когда DomainScope находит новый домен или IP (не в текущем scope проекта), он шлёт proposal:
+Когда DomainScope находит новый домен или IP (не в текущем scope проекта), он шлёт proposal — тело запроса всегда массив, до 100 элементов:
 
 ```
 POST https://hub.example.com/api/v1/projects/<project_id>/scope/proposals
-{
-  "entry_type": "domain",
-  "value": "new.example.com",
-  "scanner_name": "subfinder",
-  "source_domain": "example.com",
-  "source_ip": "1.2.3.4"
-}
+X-API-Key: <ключ сервисной учётной записи>
+
+[
+  {
+    "entry_type": "domain",
+    "value": "new.example.com",
+    "scanner_name": "domainscope",
+    "source_domain": "example.com",
+    "source_ip": "1.2.3.4"
+  }
+]
 ```
 
 В Hub UI админ видит proposal'ы, подтверждает (добавляет в scope) или отклоняет.
+
+Помимо этих двух потоков DomainScope шлёт в Hub инвентарь обнаруженных пар домен ↔ IP и отчёт о доменах, переставших резолвиться, а периметр для сканирования забирает из Hub. Полный процесс связки — [Связка DomainScope и Hub](perimeter-integration.md).
+
+!!! warning "Заголовок `Authorization: Bearer` для сервисных учётных записей не работает"
+    Он проверяется как JWT, и ключ вида `sa_...` будет отклонён с кодом `401`.
 
 ## Связь конфигов
 
@@ -78,7 +87,7 @@ POST https://hub.example.com/api/v1/projects/<project_id>/scope/proposals
 | ------------------------------ | -------------------------- | ------------------------ |
 | `DOMAINSCOPE_HUB_API_ENDPOINT` | URL Hub                    | —                        |
 | `DOMAINSCOPE_HUB_API_TOKEN`    | API key из Service Account | Service Account в Hub UI |
-| `DOMAINSCOPE_HUB_PROJECT_IDS`  | UUID проектов в Hub        | Project IDs              |
+| `DOMAINSCOPE_HUB_PROJECT_IDS`  | UUID проекта в Hub (список принимается, но используется только первый — один воркер обслуживает один проект) | Project ID |
 | `DOMAINSCOPE_SARIF_PRODUCT_ID` | UUID продукта (default)    | Product в проекте        |
 | `DOMAINSCOPE_SARIF_API_TOKEN`  | API key                    | тот же SA или отдельный  |
 
@@ -96,7 +105,7 @@ DOMAINSCOPE_ZAP_SARIF_PRODUCT_ID=<product-zap>
 | Сервис                  | Назначение                    | Где                     |
 | ----------------------- | ----------------------------- | ----------------------- |
 | `domain-scope` (daemon) | Основной runner всех циклов   | Docker / systemd        |
-| `postgresql`            | Своя БД (отдельная от Hub!)   | port 5430 в compose     |
+| `postgresql`            | Своя БД (отдельная от Hub!)   | 5432 внутри сети compose; наружу не публикуется |
 | `nuclei-templates-init` | Клонирует/обновляет templates | One-shot init           |
 | `openvas` (опц.)        | Внешний сервис, gvmd на :9390 | Отдельный compose / k8s |
 | `zap` (опц.)            | OWASP ZAP daemon              | Отдельный compose / k8s |
@@ -107,16 +116,22 @@ DomainScope имеет собственную БД `domainscope`. Не обща�
 
 Ключевые таблицы:
 
-| Таблица            | Содержит                                                         |
-| ------------------ | ---------------------------------------------------------------- |
-| `domains`          | Все известные домены с provenance (source, parent, root, status) |
-| `ip_addresses`     | IP-адреса с метаданными (NetBox теги, GeoIP, ASN)                |
-| `port_scans`       | Результаты nmap (host, port, service, version, banner)           |
-| `nuclei_findings`  | Результаты nuclei (template_id, severity, info)                  |
-| `openvas_results`  | CVE-результаты OpenVAS                                           |
-| `tls_certificates` | Сертификаты с expiry, issuer, SAN                                |
-| `scope_entries`    | Локальное зеркало scope из Hub                                   |
-| `cycle_runs`       | История запусков циклов (когда, что нашли, ошибки)               |
+| Таблица                   | Содержит                                                                     |
+| ------------------------- | ---------------------------------------------------------------------------- |
+| `domains`                 | Все известные домены с провенансом (source, parent, root, status)            |
+| `domain_ips`              | История связей домен ↔ IP (используется при построении цепочек обнаружения)  |
+| `ip_data`                 | IP-адреса: открытые порты и данные о владельце (организация, ASN, ISP, страна) |
+| `findings`                | Результаты сканирования портов: `(ip, port, transport, protocol)` с временем первого и последнего наблюдения |
+| `http_fingerprints`       | Отпечатки HTTP-сервисов                                                       |
+| `nuclei_findings`         | Результаты nuclei (шаблон, критичность, детали)                              |
+| `openvas_findings`        | Результаты OpenVAS; `openvas_state` — состояние задач сканирования            |
+| `tlsx_findings`           | Результаты анализа TLS-сертификатов                                           |
+| `zap_findings`            | Результаты OWASP ZAP                                                          |
+| `discovered_root_domains` | Корневые зоны, найденные через альтернативные имена в сертификатах            |
+
+Локальной копии периметра в базе воркера нет: периметр запрашивается у Hub
+каждый цикл и держится в памяти не дольше часа. Из-за этого сужение периметра и
+отзыв ключа доезжают до сканера без перезапуска.
 
 ## CLI
 
@@ -164,7 +179,7 @@ DOMAINSCOPE_NETBOX_API_TOKEN=<...>
 
 DOMAINSCOPE_HUB_API_ENDPOINT=https://hub.example.com
 DOMAINSCOPE_HUB_API_TOKEN=<...>
-DOMAINSCOPE_HUB_PROJECT_IDS=<uuid-1>,<uuid-2>
+DOMAINSCOPE_HUB_PROJECT_IDS=<uuid-проекта>
 
 DOMAINSCOPE_OPENVAS_ENABLED=true           # GVM кластер рядом
 DOMAINSCOPE_NUCLEI_ENABLED=true

@@ -135,9 +135,11 @@ NetBox UI → Profile → API Tokens → Add:
 # Логи worker
 docker compose logs -f worker | grep netbox_sync
 
-# Стат scope entries
+# Статистика по записям периметра: активные и отключённые, отдельно по типу и действию
 docker compose exec postgres psql -U securityhub -d securityhub -c \
-  "SELECT entry_type, status, COUNT(*) FROM scope_entries WHERE project_id='<uuid>' GROUP BY entry_type, status;"
+  "SELECT entry_type, scope_action, (disabled_at IS NULL) AS active, COUNT(*)
+     FROM scan_scope_entries WHERE project_id='<uuid>'
+    GROUP BY entry_type, scope_action, active ORDER BY 1,2,3;"
 
 # Audit-log
 docker compose exec postgres psql -U securityhub -d securityhub -c \
