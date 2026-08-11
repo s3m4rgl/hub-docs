@@ -14,32 +14,28 @@
 
 ## Интеграция с Hub
 
-```
-       ┌───────────────────┐
-       │   DomainScope     │
-       │                   │
-       │  ┌──────────────┐ │
-       │  │ subfinder    │ │
-       │  │ DNS resolver │ │
-       │  │ nmap         │ │
-       │  │ nuclei       │ │
-       │  │ openvas      │ │ ◀─── остальные сервисы (gvmd/zap)
-       │  │ tlsx         │ │
-       │  │ zap-driver   │ │
-       │  └──────┬───────┘ │
-       │         │         │
-       │         ▼         │
-       │   ┌──────────┐    │
-       │   │ PostgreSQL│   │
-       │   └──────────┘    │
-       └─────────┬─────────┘
-                 │
-       SARIF + scope proposals
-                 │
-                 ▼
-       ┌───────────────────┐         ┌───────────┐
-       │       Hub         │ ◀────── │  NetBox   │
-       └───────────────────┘         └───────────┘
+```mermaid
+flowchart TD
+    subgraph DS["DomainScope"]
+        Tools["subfinder · DNS-резолвер · nmap<br/>nuclei · openvas · tlsx · zap-driver"]
+        DB[("PostgreSQL<br/>своя база")]
+        Tools --> DB
+    end
+
+    Ext["Внешние сервисы<br/>gvmd (OpenVAS), ZAP"]
+    Hub["Security Hub"]
+    NetBox["NetBox"]
+
+    Ext --> Tools
+    DS -->|"отчёты SARIF<br/>и предложения по периметру"| Hub
+    NetBox -->|"импорт периметра"| Hub
+
+    classDef scanner fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#111827
+    classDef hub fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#111827
+    classDef ext fill:#fef9c3,stroke:#ca8a04,stroke-width:2px,color:#111827
+    class Tools,DB scanner
+    class Hub hub
+    class Ext,NetBox ext
 ```
 
 ### Два потока данных

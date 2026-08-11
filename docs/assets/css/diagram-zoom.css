@@ -56,8 +56,17 @@ body.dz-lock {
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
 }
 
-.dz-canvas svg {
+.dz-canvas svg,
+.dz-canvas img {
   display: block;
+}
+
+/* Снимки интерфейса: рамка, чтобы светлый снимок не сливался со светлым фоном
+   страницы, а тёмный — с тёмным. Курсор и обводка при наведении наследуются
+   от .dz-zoomable, общей со схемами. */
+.md-typeset img.dz-zoomable-img {
+  border: 1px solid var(--md-default-fg-color--lightest, rgba(0, 0, 0, 0.12));
+  border-radius: 6px;
 }
 
 .dz-toolbar {

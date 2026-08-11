@@ -166,23 +166,23 @@ Hub стартует через 2-5 минут. OpenVAS дополнительн
 
 ### Архитектура
 
-```
-       ┌──────────────────────┐
-       │  Git-репо (ваш)      │
-       │  values.yaml         │
-       │  ApplicationSets     │
-       └──────────┬───────────┘
-                  │ git fetch
-                  ▼
-       ┌──────────────────────┐         ┌──────────────────┐
-       │      ArgoCD          │◀───────▶│  HashiCorp Vault │
-       │  + avp-plugin        │         │  (secrets KV v2) │
-       └──────────┬───────────┘         └──────────────────┘
-                  │ apply
-                  ▼
-       ┌──────────────────────┐
-       │  Kubernetes cluster  │
-       └──────────────────────┘
+```mermaid
+flowchart TD
+    Git["Git-репозиторий (ваш)<br/>values.yaml, ApplicationSets"]
+    Argo["ArgoCD<br/>+ argocd-vault-plugin"]
+    Vault["HashiCorp Vault<br/>секреты, KV v2"]
+    K8s["Кластер Kubernetes"]
+
+    Git -->|"git fetch"| Argo
+    Argo <-->|"подстановка секретов"| Vault
+    Argo -->|"apply"| K8s
+
+    classDef src fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#111827
+    classDef ext fill:#fef9c3,stroke:#ca8a04,stroke-width:2px,color:#111827
+    classDef target fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#111827
+    class Git,Argo src
+    class Vault ext
+    class K8s target
 ```
 
 ArgoCD читает чарт и values из вашего git, `argocd-vault-plugin` подменяет плейсхолдеры `<path:kv/data/...>` на реальные секреты из Vault, helm накатывает в кластер.

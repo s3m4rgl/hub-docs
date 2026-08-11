@@ -7,27 +7,33 @@ Hub умеет создавать задачи в Jira, переводить и�
 
 ## Архитектура
 
-```
-   Hub finding (status=open)
-        │
-        │ User clicks "Create Jira ticket"
-        │   ИЛИ автосоздание при auto_create_on_confirm=true
-        ▼
-   Worker job: jira_create
-        │
-        ├─ Формирует payload (через template engine)
-        ├─ POST /rest/api/2/issue → Jira
-        ├─ Сохраняет jira_issue_key в finding
-        ├─ (опц.) выполняет initial_transition_chain
-        └─ (опц.) добавляет attachments/комментарий
+```mermaid
+flowchart TD
+    F["Находка в Hub<br/>состояние «открыта»"]
+    Trigger{"Что запускает<br/>создание задачи"}
+    Manual["Кнопка «Создать задачу»<br/>в интерфейсе"]
+    Auto["Автосоздание при подтверждении<br/>auto_create_on_confirm=true"]
 
-        │
-        ▼
-   Periodic worker: jira_reverse_sync (раз в N минут)
-        │
-        ├─ Тянет статусы тикетов из Jira
-        ├─ Если статус = Done/Resolved/Fixed → закрывает finding в Hub
-        └─ Эталонные статусы — из jira_config.reverse_sync_done_statuses
+    Job["Фоновая задача jira_create"]
+    Steps["Собрать содержимое по шаблону<br/>POST /rest/api/2/issue<br/>Сохранить ключ задачи в находке<br/>Опционально: цепочка переходов,<br/>вложения, комментарий"]
+    Jira["Jira"]
+
+    Sync["Периодическая задача<br/>jira_reverse_sync"]
+    SyncSteps["Забрать статусы задач из Jira<br/>Статус из reverse_sync_done_statuses<br/>→ закрыть находку в Hub"]
+
+    F --> Trigger
+    Trigger --> Manual --> Job
+    Trigger --> Auto --> Job
+    Job --> Steps --> Jira
+    Jira -.->|"раз в N минут"| Sync
+    Sync --> SyncSteps --> F
+
+    classDef hub fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#111827
+    classDef work fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#111827
+    classDef ext fill:#fef9c3,stroke:#ca8a04,stroke-width:2px,color:#111827
+    class F,Manual,Auto hub
+    class Job,Steps,Sync,SyncSteps work
+    class Jira ext
 ```
 
 ## Переменные окружения

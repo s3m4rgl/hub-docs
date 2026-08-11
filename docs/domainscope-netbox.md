@@ -136,25 +136,29 @@ Token будет в формате `nbt_xxxxxxxxxxxxxx`.
 
 Типовая последовательность:
 
-```
-1. Админ заводит в NetBox корневые domain-zones + базовые prefixes
-   с тегом security-scope
+```mermaid
+flowchart TD
+    A["1 — Администратор заводит в NetBox<br/>корневые DNS-зоны и базовые подсети<br/>с тегом security-scope"]
+    B["2 — DomainScope импортирует периметр из NetBox"]
+    C["3 — subfinder и резолвинг DNS"]
+    D["4 — обнаружены новые поддомены и адреса"]
+    E["5 — новые адреса пишутся обратно в NetBox<br/>с тегом domainscope-crawler"]
+    F["6 — сканирование целевых адресов:<br/>порты, nuclei и остальные движки"]
+    G["7 — результаты уходят в Hub:<br/>отчёты SARIF и предложения по периметру"]
 
-2. DomainScope импортирует scope из NetBox
-3. Запускает subfinder + DNS resolve
-4. Обнаруживает новые субдомены и IP
-5. Пишет новые IP обратно в NetBox с тегом domainscope-crawler
-6. Сканирует целевые IP (port scan, nuclei, etc.)
-7. Шлёт результаты в Hub как SARIF + scope proposals
+    H["8 — разбор в NetBox<br/>адреса с тегом domainscope-crawler — новинки:<br/>наш периметр → поставить security-scope,<br/>чужое или ложное → удалить либо исключить"]
+    I["9 — разбор предложений в Hub<br/>одобрить → запись входит в периметр и в отчётность,<br/>отклонить → запись помечена и синхронизацией не вернётся"]
 
-8. Админ периодически ревьюит NetBox:
-   - IP с тегом domainscope-crawler — это новинки
-   - Если IP — наш периметр → добавить тег security-scope
-   - Если нет (parking, false positive) → удалить или пометить exclude
+    A --> B --> C --> D --> E --> F --> G
+    G --> H
+    G --> I
+    H -->|"следующий цикл"| B
+    I -->|"следующий цикл"| B
 
-9. В Hub админ ревьюит scope proposals:
-   - Подтверждает → entry попадает в scope, проект учитывает в дашборде
-   - Отклоняет → entry помечен tombstone, sync не реактивирует
+    classDef ops fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#111827
+    classDef auto fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#111827
+    class A,H,I ops
+    class B,C,D,E,F,G auto
 ```
 
 ## Hub + DomainScope + NetBox: единая картина
