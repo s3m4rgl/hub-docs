@@ -104,7 +104,7 @@ global:
 
 securityScanHub:
   image:
-    tag: "0.30"
+    tag: "0.31"
 
   env:
     appEnv: production
@@ -129,7 +129,7 @@ securityScanHub:
 domainscope:
   enabled: true
   image:
-    tag: "0.30"
+    tag: "0.31"
 
 openvas:
   enabled: false # включите если нужен CVE-scanner
