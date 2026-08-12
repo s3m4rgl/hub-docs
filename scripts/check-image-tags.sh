@@ -93,6 +93,17 @@ done < <(
 )
 
 echo
+# Zero pins found is a FAILURE, not a pass. It means either the extraction
+# patterns have gone stale (a file moved, the compose syntax changed) or the
+# script is running from the wrong directory — and in both cases reporting
+# success would be a lie that hides exactly what this check exists to catch.
+if [ "$CHECKED" -eq 0 ]; then
+  echo "FAIL: found no image pins to check at all, in $(pwd)." >&2
+  echo "      Expected pins in docker-compose.yml, .env.example and charts/*/values.yaml." >&2
+  echo "      Either the extraction patterns are stale or this ran outside the repository root." >&2
+  exit 1
+fi
+
 if [ "$FAILED" -gt 0 ]; then
   echo "FAIL: ${FAILED} of ${CHECKED} pinned image tag(s) do not exist in the registry." >&2
   echo "      A pin that cannot be pulled turns every fresh install into ImagePullBackOff." >&2
