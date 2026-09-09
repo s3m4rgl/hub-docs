@@ -18,11 +18,33 @@ spec:
         app.kubernetes.io/component: zap
         {{- include "chart.selectorLabels" . | nindent 8 }}
     spec:
+      ## Образ zaproxy/zap-stable запускается от пользователя zap (uid/gid 1000),
+      ## а PVC монтируется в его HOME (/home/zap/.ZAP). Без fsGroup kubelet не
+      ## меняет владельца тома, и у большинства CSI свежий том приезжает как
+      ## root:root 0755 → ZAP падает с "The home path is not writable" и уходит
+      ## в CrashLoopBackOff.
+      ##
+      ## На k3s local-path баг не проявляется: тамошний provisioner создаёт
+      ## каталог с правами 0777. Поэтому проблема видна только у клиентов на
+      ## обычном CSI — не воспроизводится на стенде разработки.
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- if .Values.wireguard.enabled }}
       initContainers:
       - name: wg-setup
-        image: alpine:3.19
+        ## Образ с уже установленными wireguard-tools и iproute2. Раньше здесь был
+        ## alpine + `apk add` на старте: это требовало доступа в интернет к
+        ## репозиториям Alpine на каждый рестарт пода и падало в кластерах с
+        ## закрытым или проксированным egress.
+        image: {{ .Values.wireguard.image.repository }}{{ if .Values.wireguard.image.digest }}@{{ .Values.wireguard.image.digest }}{{ else }}:{{ .Values.wireguard.image.tag }}{{ end }}
+        imagePullPolicy: {{ .Values.wireguard.image.pullPolicy }}
+        ## Настройка сети требует root и CAP_NET_ADMIN — переопределяем
+        ## pod-level runAsNonRoot только для этого init-контейнера.
         securityContext:
+          runAsNonRoot: false
+          runAsUser: 0
           capabilities:
             add: [NET_ADMIN]
         env:
@@ -50,15 +72,35 @@ spec:
           value: {{ default "10.43.0.0/16" .Values.wireguard.serviceCidr | quote }}
         - name: K8S_POD_CIDR
           value: {{ default "10.42.0.0/16" .Values.wireguard.podCidr | quote }}
+        - name: K8S_NODE_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        - name: WG_KEEP_ON_DEFAULT_GW
+          value: {{ join "," (default (list) .Values.wireguard.keepOnDefaultGw) | quote }}
+        - name: WG_ROUTE_VIA_TUNNEL
+          value: {{ join "," (default (list) .Values.wireguard.routeViaTunnel) | quote }}
+        - name: WG_TUNNEL_CIDR
+          value: {{ default "10.200.0.0/24" .Values.wireguard.tunnelCidr | quote }}
+        - name: WG_MTU
+          value: {{ default 1420 .Values.wireguard.mtu | quote }}
         command:
         - /bin/sh
         - -c
         - |
-          set -e
-          apk add --no-cache wireguard-tools iproute2
-          ## Идемпотентность: при рестарте init-контейнера wg0 может уже существовать
+          set -eu
+
+          ## Идемпотентность: при рестарте init-контейнера wg0 может уже существовать.
           ip link del wg0 2>/dev/null || true
-          ip link add wg0 type wireguard
+
+          if ! ip link add wg0 type wireguard 2>/dev/null; then
+            echo "FATAL: не удалось создать интерфейс wireguard." >&2
+            echo "  Модуль wireguard недоступен на ноде. Проверьте на ноде:" >&2
+            echo "    modprobe wireguard && lsmod | grep wireguard" >&2
+            echo "  Ядро 5.6+ содержит wireguard штатно; на старых нужен wireguard-dkms." >&2
+            exit 1
+          fi
+
           echo "${WG_PRIVATE_KEY}" | wg set wg0 \
             private-key /dev/stdin \
             peer "${WG_SERVER_PUBLIC_KEY}" \
@@ -66,22 +108,74 @@ spec:
             allowed-ips 0.0.0.0/0 \
             persistent-keepalive 25
           ip addr add "${WG_POD_IP}" dev wg0
-          ip link set wg0 up
+          ip link set wg0 mtu "${WG_MTU}" up
+
           DEFAULT_GW=$(ip route | awk '/default/ {print $3}')
           if [ -z "$DEFAULT_GW" ]; then
             echo "FATAL: no default gateway in pod netns" >&2; exit 1
           fi
-          WG_ENDPOINT_IP=$(echo "${WG_SERVER_ENDPOINT}" | cut -d: -f1)
-          ## Идемпотентность: replace вместо add — переживает restart init-контейнера
+
+          ## Endpoint WG-сервера обязан остаться на исходном шлюзе, иначе
+          ## туннель попытается идти сам через себя.
+          ## Endpoint может быть DNS-именем — резолвим (getent есть и в busybox,
+          ## и в glibc-образах).
+          WG_ENDPOINT_HOST=$(echo "${WG_SERVER_ENDPOINT}" | sed 's/:[0-9]*$//')
+          case "${WG_ENDPOINT_HOST}" in
+            *[!0-9.]*)
+              WG_ENDPOINT_IP=$(getent ahostsv4 "${WG_ENDPOINT_HOST}" | awk 'NR==1 {print $1}')
+              if [ -z "${WG_ENDPOINT_IP}" ]; then
+                echo "FATAL: не удалось разрезолвить endpoint ${WG_ENDPOINT_HOST}" >&2; exit 1
+              fi
+              ;;
+            *) WG_ENDPOINT_IP="${WG_ENDPOINT_HOST}" ;;
+          esac
+          echo "endpoint ${WG_ENDPOINT_HOST} -> ${WG_ENDPOINT_IP} (via ${DEFAULT_GW})"
+
+          ## Идемпотентность: replace вместо add — переживает restart init-контейнера.
           ip route replace "${WG_ENDPOINT_IP}/32" via "${DEFAULT_GW}"
+
+          ## Весь остальной исходящий трафик — в туннель (две /1 перебивают
+          ## default, не удаляя его).
           ip route replace 0.0.0.0/1 dev wg0
           ip route replace 128.0.0.0/1 dev wg0
-          ip route replace "${K8S_SERVICE_CIDR}" via "${DEFAULT_GW}"
-          ip route replace "${K8S_POD_CIDR}" via "${DEFAULT_GW}"
-          ip route replace 10.0.0.0/8 via "${DEFAULT_GW}" || true
-          ip route replace 172.16.0.0/12 via "${DEFAULT_GW}" || true
-          ip route replace 192.168.0.0/16 via "${DEFAULT_GW}" || true
+
+          ## Внутрикластерный трафик и связь с нодой обязаны остаться на шлюзе,
+          ## иначе отвалятся DNS, обращения к API-серверу и kubelet-пробы.
+          ## Node IP берём из downward API: у нод с публичным адресом он НЕ
+          ## попадает в приватные диапазоны ниже, и без этой строки пробы падают.
+          for CIDR in "${K8S_SERVICE_CIDR}" "${K8S_POD_CIDR}" "${K8S_NODE_IP}/32"; do
+            ip route replace "${CIDR}" via "${DEFAULT_GW}"
+          done
+          for CIDR in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16; do
+            ip route replace "${CIDR}" via "${DEFAULT_GW}" || true
+          done
+          ## Дополнительные подсети, которые не должны уходить в туннель.
+          if [ -n "${WG_KEEP_ON_DEFAULT_GW}" ]; then
+            echo "${WG_KEEP_ON_DEFAULT_GW}" | tr ',' '\n' | while read -r CIDR; do
+              [ -n "$CIDR" ] && ip route replace "$CIDR" via "${DEFAULT_GW}" || true
+            done
+          fi
+
+          ## Сама подсеть туннеля обязана ходить ЧЕРЕЗ туннель. Без этой строки
+          ## она попадает под общее правило 10.0.0.0/8 → шлюз (стандартный
+          ## WG_NETWORK из scripts/wg — 10.200.0.0/24, то есть внутри 10/8),
+          ## и WG-сервер со своего внутреннего адреса становится недоступен.
+          ip route replace "${WG_TUNNEL_CIDR}" dev wg0
+
+          ## Цели, которые нужно гнать именно в туннель, несмотря на правила
+          ## выше. Основной случай: сканирование внутреннего периметра клиента,
+          ## который живёт в RFC1918 и достижим ТОЛЬКО со стороны WG-сервера —
+          ## без этого такие адреса уходили бы в локальный шлюз кластера.
+          ## Работает за счёт longest-prefix match: 10.5.0.0/16 перебивает
+          ## общее 10.0.0.0/8.
+          if [ -n "${WG_ROUTE_VIA_TUNNEL}" ]; then
+            echo "${WG_ROUTE_VIA_TUNNEL}" | tr ',' '\n' | while read -r CIDR; do
+              [ -n "$CIDR" ] && ip route replace "$CIDR" dev wg0 || true
+            done
+          fi
+
           wg show
+          ip route
       {{- end }}
       containers:
       - name: zap
@@ -91,21 +185,30 @@ spec:
         ## API key is read from a mounted Secret file rather than passed via
         ## -config api.key=... — that keeps the key OUT of /proc/<pid>/cmdline
         ## (visible to anyone with kubectl exec or local ps).
+        ##
+        ## jvmOpts передаётся АРГУМЕНТОМ zap.sh, а не через env JAVA_OPTS:
+        ## zap.sh не читает JAVA_OPTS вообще. Без явного -Xmx он берёт 1/4 от
+        ## /proc/meminfo, то есть от памяти НОДЫ, а не от resources.limits —
+        ## его детект cgroup-лимита смотрит только в cgroup v1
+        ## (/sys/fs/cgroup/memory/memory.stat), которого на cgroup v2 нет.
+        ## На ноде 32 ГБ с лимитом 4Gi это давало -Xmx8020m → гарантированный
+        ## OOMKill. Держите jvmOpts ≤ ~75% от resources.limits.memory.
         command:
         - /bin/sh
         - -c
         - |
           set -e
           API_KEY="$(cat /etc/zap-secret/apiKey)"
-          exec zap.sh -daemon \
+          exec zap.sh -daemon {{ .Values.jvmOpts }} \
             -host 0.0.0.0 \
             -port {{ .Values.port }} \
             -config api.addrs.addr.name=.* \
             -config api.addrs.addr.regex=true \
+            {{- if not .Values.checkForUpdates }}
+            -config start.checkForUpdates=false \
+            -config start.checkAddonUpdates=false \
+            {{- end }}
             -config api.key="${API_KEY}"
-        env:
-        - name: JAVA_OPTS
-          value: {{ .Values.jvmOpts | quote }}
         ports:
         - name: zap-api
           containerPort: {{ .Values.port }}
@@ -118,30 +221,37 @@ spec:
           readOnly: true
         - mountPath: /home/zap/.ZAP
           name: zap-data
-        ## Liveness via the unauthenticated /JSON/core/view/version/ ZAP API endpoint:
-        ## ZAP requires the API key for most calls but exposes /OTHER/core/other/htmlreport/
-        ## and version checks. We probe TCP instead — ZAP API may reject HTTP probes
-        ## without the right Host header and we don't want to leak the key in env.
+        ## Пробы — TCP: ZAP требует API-ключ почти на все вызовы, а тащить ключ
+        ## в HTTP-пробу означало бы светить его в спеке пода.
+        ##
+        ## startupProbe закрывает медленный холодный старт: на пустом PVC ZAP
+        ## докачивает ~25 аддонов, и до открытия порта проходит 60+ секунд, а на
+        ## медленном канале — заметно больше. Пока startupProbe не прошла,
+        ## liveness не считается, поэтому долгий первый запуск больше не может
+        ## сам себя убить рестартом.
+        startupProbe:
+          tcpSocket:
+            port: zap-api
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          failureThreshold: {{ .Values.startupProbe.failureThreshold }}
         livenessProbe:
           tcpSocket:
             port: zap-api
-          initialDelaySeconds: 60
           periodSeconds: 30
           failureThreshold: 5
         readinessProbe:
           tcpSocket:
             port: zap-api
-          initialDelaySeconds: 30
           periodSeconds: 10
       restartPolicy: Always
       volumes:
       - name: zap-secret
         secret:
           secretName: {{ include "chart.secretsName" . }}
-          ## ZAP контейнер запущен от пользователя zap (uid 1000), а Secret-том
-          ## создаётся owned by root, поэтому монтируем с 0444 — всё в pod-е
-          ## изолировано, по сети наружу ключ всё равно идёт по mTLS внутри кластера.
-          defaultMode: 0444
+          ## Секрет монтируется владельцем root:fsGroup; 0440 достаточно,
+          ## чтобы группа 1000 (пользователь zap) могла прочитать ключ.
+          defaultMode: 0440
           items:
           - key: apiKey
             path: apiKey
