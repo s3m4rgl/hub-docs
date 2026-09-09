@@ -157,10 +157,10 @@ frontend:
       repository: dexionius/sshub-frontend
       tag: "0.30"
       pullPolicy: IfNotPresent
-    ## Pod securityContext. По умолчанию — nginx-uid 101 (non-root).
-    ## Если образ копирует бандл как root:root, runtime-инъекция env через
-    ## `sed -i` в entrypoint.sh ломается под non-root — тогда переопределите
-    ## (например, runAsUser: 0). Подробнее — комментарий в frontend-deployment.yaml.
+    ## Pod securityContext. По умолчанию — uid 101 (непривилегированный).
+    ## С 0.33 образ интерфейса под ним работает штатно; обход `runAsUser: 0`
+    ## нужен только для образов 0.32 и старше. Подробнее — комментарий в
+    ## frontend-deployment.yaml.
     podSecurityContext:
       runAsNonRoot: true
       runAsUser: 101
@@ -175,11 +175,12 @@ frontend:
         memory: "256Mi"
     env:
       apiUrl: https://hub.example.com
-      authMode: LOCAL
-      keycloakUrl: ""
-      keycloakRealm: ""
-      keycloakClientId: ""
       netboxUrl: ""
+      ## Настроек Keycloak у интерфейса больше НЕТ, и это не упущение.
+      ## Он спрашивает у backend `/auth/config` и получает оттуда список
+      ## провайдеров с готовыми адресами — сам адрес IdP, realm и
+      ## client_id ему знать не нужно. Прежние authMode/keycloak* тут
+      ## задавались, но фронтом не читались; задавайте их у backend.
 
 postgres:
   image:

@@ -17,13 +17,14 @@ spec:
         app.kubernetes.io/component: frontend
         {{- include "chart.selectorLabels" . | nindent 8 }}
     spec:
-      ## Pod securityContext конфигурируется через values
-      ## (frontend.frontend.podSecurityContext). По умолчанию — nginx-uid 101.
-      ## ВНИМАНИЕ: entrypoint.sh инжектит env в бандл через `sed -i`, что требует
-      ## прав на запись в /usr/share/nginx/html. Если образ копирует бандл как
-      ## root:root (644), запуск под non-root uid 101 ломает инъекцию
-      ## («sed: can't create temp file ... Permission denied»). В таком случае
-      ## переопределите podSecurityContext (например, runAsUser: 0) — см. values-poc.
+      ## Pod securityContext задаётся через values
+      ## (frontend.frontend.podSecurityContext). По умолчанию — uid 101.
+      ##
+      ## Обход `runAsUser: 0` больше не нужен: с 0.33 образ владельцем файлов
+      ## делает 101 при сборке, а pid-файл nginx вынесен в /tmp. На образах
+      ## 0.32 и старше запуск под non-root ломал подстановку адресов
+      ## («sed: can't create temp file … Permission denied») — там обход
+      ## по-прежнему требуется.
       securityContext:
         {{- toYaml .Values.frontend.frontend.podSecurityContext | nindent 8 }}
       containers:
@@ -33,14 +34,6 @@ spec:
         env:
         - name: REACT_APP_API_URL
           value: {{ tpl (.Values.frontend.frontend.env.apiUrl | default "") . | quote }}
-        - name: REACT_APP_AUTH_MODE
-          value: {{ .Values.frontend.frontend.env.authMode | quote }}
-        - name: REACT_APP_KEYCLOAK_URL
-          value: {{ .Values.frontend.frontend.env.keycloakUrl | quote }}
-        - name: REACT_APP_KEYCLOAK_REALM
-          value: {{ .Values.frontend.frontend.env.keycloakRealm | quote }}
-        - name: REACT_APP_KEYCLOAK_CLIENT_ID
-          value: {{ .Values.frontend.frontend.env.keycloakClientId | quote }}
         - name: REACT_APP_NETBOX_BASE_URL
           value: {{ .Values.frontend.frontend.env.netboxUrl | default "" | quote }}
         - name: KUBERNETES_CLUSTER_DOMAIN

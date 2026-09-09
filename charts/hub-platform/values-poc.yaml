@@ -147,18 +147,17 @@ hub:
         llmDryRun: "true"
   frontend:
     frontend:
-      ## ВАЖНО: http (не https) — иначе фронт не достучится до auth/config и
-      ## покажет SSO-экран вместо локального логина (см. выше).
+      ## http, а не https, потому что TLS в этом стенде выключен выше
+      ## (`tls.mode: disabled`) — https-слушателя тут нет вовсе. Это свойство
+      ## POC, а не ограничение продукта: с включённым TLS адрес пишется
+      ## `https://`, и локальная аутентификация работает так же. Больше того,
+      ## в production-режиме https ОБЯЗАТЕЛЕН — cookie обновления сессии
+      ## ставится с флагом Secure, и по http тихого продления не будет.
       env:
         apiUrl: http://hub.poc.local
-        authMode: LOCAL
-      ## Образ копирует бандл как root:root, а entrypoint.sh инжектит env через
-      ## `sed -i` → под non-root uid 101 ломается (Permission denied). Запускаем
-      ## под root, чтобы инъекция отработала. PROD: пересобрать образ с
-      ## chown 101 на /usr/share/nginx/html и вернуть non-root.
-      podSecurityContext:
-        runAsNonRoot: false
-        runAsUser: 0
+      ## Обхода `runAsUser: 0` здесь больше нет: с 0.33 образ интерфейса
+      ## работает под непривилегированным пользователем (uid 101) — владелец
+      ## файлов выставляется при сборке, pid-файл вынесен в /tmp.
   ## iac-scanner: amd64-образ под эмуляцией. Включается ПОСЛЕ создания
   ## Service Account в Hub UI (см. комментарий в values.yaml). По умолчанию off.
   iacScanner:
