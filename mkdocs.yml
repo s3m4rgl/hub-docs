@@ -95,6 +95,7 @@ nav:
       - AI-триаж и песочница: integration-llm.md
       - Загрузка отчётов: integration-sarif.md
       - Плагины: plugins.md
+      - Официальные плагины: plugins-official.md
   - DomainScope:
       - Обзор: domainscope-overview.md
       - Установка: domainscope-install.md
