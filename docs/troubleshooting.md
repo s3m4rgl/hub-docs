@@ -497,7 +497,6 @@ kubectl scale deploy hub-worker --replicas=3 -n hub
 
 ```ini
 DISPATCHER_WORKERS=20
-TELEGRAM_NOTIFICATION_WORKERS=10
 MATTERMOST_NOTIFICATION_WORKERS=20
 ```
 

@@ -161,7 +161,6 @@ API он не возвращается.
 | Переменная | Назначение | По умолчанию |
 | --- | --- | --- |
 | `DISPATCHER_WORKERS` | Параллелизм диспетчера событий | `10` |
-| `TELEGRAM_NOTIFICATION_WORKERS` | Отправка в Telegram | `5` |
 | `MATTERMOST_NOTIFICATION_WORKERS` | Отправка в Mattermost | `10` |
 | `MAXRU_NOTIFICATION_WORKERS` | Отправка в MAX | `5` |
 | `EMAIL_NOTIFICATION_WORKERS` | Отправка почты | `5` |
