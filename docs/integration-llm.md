@@ -4,38 +4,28 @@ Hub использует LLM для триажа находки: оценить,
 
 ## Архитектура
 
-```
-   Finding (open, status=new)
-        │
-        │ (trigger: severity ≥ threshold OR опц. админ-кнопка)
-        ▼
-   LLM Worker (job in queue)
-        │
-        ├─ 1. Сборка контекста (finding + product + scope)
-        ├─ 2. Multi-turn dialog с LLM:
-        │       Turn 1: классификация (FP / TP / нужна проверка)
-        │       Turn 2: если "нужна проверка" → план команд
-        │       Turn 3: получает результат sandbox, делает вывод
-        │
-        ▼
-   Если включён Sandbox:
-   ┌─────────────────────────┐
-   │ Sandbox executor        │
-   │  docker run / k8s job   │
-   │  с allowlist команд     │
-   │  timeout, output limit  │
-   └────────────┬────────────┘
-                │ stdout/stderr → обратно в LLM
-                ▼
-        Hub получает финальное решение:
-        - is_false_positive: bool
-        - confidence: float
-        - reasoning: text
-        - executed_commands: list
+```mermaid
+flowchart TD
+    F["Новая находка"]
+    T["Запуск: критичность выше порога<br/>или кнопка администратора"]
+    W["Фоновая задача AI-триажа"]
+    C["Сбор контекста:<br/>находка, продукт, периметр"]
+    D["Диалог с моделью в несколько шагов:<br/>1 — классификация: ложное, реальное, нужна проверка<br/>2 — если нужна проверка, план команд<br/>3 — вывод по результату проверки"]
+    S["Песочница<br/>docker run или задание Kubernetes<br/>список разрешённых команд,<br/>ограничение времени и объёма вывода"]
+    R["Решение:<br/>ложное срабатывание — да или нет,<br/>уверенность, обоснование,<br/>список выполненных команд"]
+    A["Уверенность выше порога<br/>LLM_FALSE_POSITIVE_THRESHOLD<br/>→ находка помечается ложной<br/>с комментарием"]
 
-        Если confidence ≥ LLM_FALSE_POSITIVE_THRESHOLD
-        и is_false_positive=true → finding автоматически
-        помечается false_positive с комментарием
+    F --> T --> W --> C --> D
+    D -->|"если песочница включена"| S
+    S -->|"вывод команд обратно в модель"| D
+    D --> R --> A
+
+    classDef hub fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#111827
+    classDef work fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#111827
+    classDef box fill:#fef9c3,stroke:#ca8a04,stroke-width:2px,color:#111827
+    class F,T,R,A hub
+    class W,C,D work
+    class S box
 ```
 
 ## Переменные окружения

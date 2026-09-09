@@ -67,7 +67,9 @@ DOMAINSCOPE_SARIF_IP_SCOPE=public      # all / public / private
 POSTGRES_PASSWORD=<strong-password>
 ```
 
-> **Service Account в Hub**: до старта DomainScope создайте Service Account в Hub (см. [Загрузка отчётов внешних сканеров](integration-sarif.md)) с permission на нужный project/product. Скопируйте API key — это `DOMAINSCOPE_HUB_API_TOKEN`.
+> **Service Account в Hub**: до старта DomainScope создайте Service Account в Hub (см. [Загрузка отчётов внешних сканеров](integration-sarif.md)) и выдайте ему право `upload_report` **на проект** — одной этой записи достаточно и для загрузки отчётов во все продукты проекта, и для записи предложений, инвентаря и отчёта о резолве. Право `manage_scope` сканеру не нужно. Скопируйте API key — это `DOMAINSCOPE_HUB_API_TOKEN` (он же обычно `DOMAINSCOPE_SARIF_API_TOKEN`).
+>
+> Полный процесс связки воркера с проектом — [Связка DomainScope и Hub](perimeter-integration.md).
 
 ### 3. Запуск
 

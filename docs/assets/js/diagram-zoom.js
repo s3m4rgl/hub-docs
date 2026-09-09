@@ -1,5 +1,5 @@
 /*
- * Отрисовка схем mermaid и их просмотр в модальном окне.
+ * Отрисовка схем mermaid и просмотр схем и снимков экрана в модальном окне.
  *
  * Версия mermaid зафиксирована намеренно: тема Material подгружает mermaid
  * плавающей мажорной версией, из-за чего очередной релиз может молча сломать
@@ -339,6 +339,63 @@
   }
 
   /* Перерисовка при переключении светлой/тёмной темы. */
+  /* ---------- снимки экрана ---------- */
+
+  /* Снимки интерфейса вставляются в текст на ширину колонки, а исходники у них
+   * шириной полтора экрана — надписи на кнопках и в таблицах нечитаемы. Поэтому
+   * снимки открываются в том же просмотрщике, что и схемы: масштаб, сдвиг, Esc.
+   *
+   * Берём только иллюстрации из assets/img: значки, эмодзи и логотипы темы
+   * увеличивать незачем, а внутри самого просмотрщика (dz-canvas) обработчик
+   * повесить нельзя — получилось бы открытие поверх открытого. */
+  function isZoomableImage(img) {
+    if (!img.getAttribute) return false;
+    if (img.closest(".dz-canvas")) return false;
+    if (img.classList.contains("twemoji") || img.classList.contains("emojione")) return false;
+    var src = img.getAttribute("src") || "";
+    return src.indexOf("assets/img/") !== -1;
+  }
+
+  function openImage(img) {
+    var clone = img.cloneNode(true);
+    clone.removeAttribute("class");
+    clone.removeAttribute("id");
+    clone.removeAttribute("tabindex");
+    clone.removeAttribute("role");
+    clone.removeAttribute("title");
+    clone.style.maxWidth = "none";
+    clone.style.width = "min(92vw, 1700px)";
+    clone.style.height = "auto";
+    clone.style.display = "block";
+    viewer.open(clone, img);
+  }
+
+  function wireImages() {
+    var imgs = Array.prototype.slice.call(
+      document.querySelectorAll(".md-typeset img")
+    ).filter(isZoomableImage);
+    if (!imgs.length) return;
+    if (!viewer) viewer = Viewer(buildOverlay());
+
+    imgs.forEach(function (img) {
+      if (img.dataset.dzBound) return;
+      img.dataset.dzBound = "1";
+      img.classList.add("dz-zoomable", "dz-zoomable-img");
+      img.setAttribute("tabindex", "0");
+      img.setAttribute("role", "button");
+      var label = img.getAttribute("alt") || "снимок экрана";
+      img.setAttribute("title", "Нажмите, чтобы открыть крупнее: " + label);
+      img.setAttribute("aria-label", "Открыть крупнее: " + label);
+      img.addEventListener("click", function () { openImage(img); });
+      img.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") {
+          e.preventDefault();
+          openImage(img);
+        }
+      });
+    });
+  }
+
   function watchPalette() {
     if (paletteObserver) return; // уже наблюдаем — не плодить MutationObserver'ы
     var last = isDark();
@@ -353,6 +410,7 @@
 
   function boot() {
     renderAll();
+    wireImages();
     watchPalette();
   }
 

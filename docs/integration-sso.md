@@ -62,21 +62,19 @@ SSO_PROVIDERS=keycloak,okta      # Keycloak + Okta
 
 ## Архитектура (один провайдер)
 
-```
-                    ┌───────────────┐
-                    │   Browser     │
-                    └───────┬───────┘
-                            │ 1. /auth/sso/<provider>/login
-                            ▼
-                  ┌─────────────────┐
-                  │  Hub backend    │ ── 2. redirect to IdP ──▶  ┌──────────┐
-                  │                 │                            │ OIDC IdP │
-                  │                 │ ◀── 3. code via redirect ──│ (KC/AAD) │
-                  │                 │                            └──────────┘
-                  │                 │ ── 4. exchange code → tokens
-                  │                 │ ── 5. create/update user in DB
-                  │                 │ ── 6. issue internal JWT
-                  └─────────────────┘
+```mermaid
+sequenceDiagram
+    autonumber
+    participant B as Браузер
+    participant H as Backend Hub
+    participant I as Провайдер OIDC
+
+    B->>H: /auth/sso/<провайдер>/login
+    H->>I: перенаправление на страницу входа
+    I-->>H: код авторизации через redirect
+    H->>I: обмен кода на токены
+    H->>H: создание или обновление<br/>пользователя в базе
+    H-->>B: внутренний JWT Hub
 ```
 
 ## Сценарий A: Keycloak рядом с Hub

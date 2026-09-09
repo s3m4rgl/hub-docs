@@ -19,6 +19,45 @@ Jira, проверенные на живых площадках.
     плагина — порядок перехода согласуйте с поставщиком: возврата к
     встроенной дороге не предусмотрено.
 
+## Как это работает
+
+```mermaid
+flowchart TD
+    F["Находка в Hub<br/>состояние «открыта»"]
+    Trigger{"Что запускает<br/>заведение задачи"}
+    Manual["Кнопка в карточке находки"]
+    Auto["Автосоздание при подтверждении"]
+
+    Core["Ядро Hub<br/>решает КОГДА и ЧТО подставить"]
+    Plugin["Плагин jira-ticketing<br/>знает КУДА и КАК"]
+    Jira["Jira"]
+
+    Back{"Возврат статуса"}
+    Hook["Вебхук от Jira"]
+    Poll["Опрос статусов из Hub"]
+
+    F --> Trigger
+    Trigger --> Manual --> Core
+    Trigger --> Auto --> Core
+    Core -->|"значения плейсхолдеров,<br/>цель, признак группировки"| Plugin
+    Plugin -->|"создать, прокомментировать,<br/>перевести по статусу"| Jira
+    Jira -.-> Back
+    Back --> Hook --> F
+    Back --> Poll --> F
+
+    classDef hub fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#111827
+    classDef work fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#111827
+    classDef ext fill:#fef9c3,stroke:#ca8a04,stroke-width:2px,color:#111827
+    class F,Manual,Auto,Core hub
+    class Plugin,Hook,Poll work
+    class Jira ext
+```
+
+Граница проходит там же, где и ответственность: **ядро** решает, когда
+заводить задачу и какие значения подставить, **плагин** — куда обращаться и
+в каком виде. Поэтому адрес Jira и её поля в настройках ядра не встречаются
+вовсе.
+
 ## Где что настраивается
 
 Настройки лежат на трёх уровнях, и это разделение не формальное — у каждого

@@ -162,17 +162,28 @@ Swagger UI: он меняется чаще, чем эта страница.
 Эти эндпоинты нужны, если внешний сканер должен брать список целей из Hub, а
 не хранить его у себя.
 
-| Метод и путь | Назначение |
-| --- | --- |
-| `GET /projects/<id>/scope/export` | Выгрузка периметра для сканера |
-| `GET /projects/<id>/scope` | Просмотр записей периметра |
-| `POST /projects/<id>/scope/entries` | Добавление записи |
-| `POST /projects/<id>/scope/proposals` | Предложение добавить обнаруженный объект |
-| `GET /projects/<id>/scope/proposals` | Список предложений, ожидающих решения |
-| `POST /projects/<id>/scope/import/netbox` | Импорт из NetBox |
+| Метод и путь | Назначение | Требуемое право |
+| --- | --- | --- |
+| `GET /projects/<id>/scope/export` | Выгрузка периметра для сканера | любое право на проект |
+| `GET /projects/<id>/scope` | Просмотр записей периметра | любое право на проект |
+| `POST /projects/<id>/scope/filter` | Отбор целей, попадающих в периметр | любое право на проект |
+| `POST /projects/<id>/scope/proposals` | Предложение добавить обнаруженный объект | `upload_report` |
+| `POST /projects/<id>/scope/assets` | Инвентарь: обнаруженные пары домен ↔ IP | `upload_report` |
+| `POST /projects/<id>/scope/resolution-report` | Домены, переставшие или снова начавшие резолвиться | `upload_report` |
+| `GET /projects/<id>/scope/proposals` | Список предложений, ожидающих решения | любое право на проект |
+| `POST /projects/<id>/scope/entries` | Добавление записи | `manage_scope` |
+| `POST /projects/<id>/scope/import/netbox` | Импорт из NetBox | `manage_scope` |
+
+Права разделены намеренно. Первые шесть строк — это то, что вызывает сканер:
+ему достаточно `upload_report`, который у него и так есть для загрузки отчётов.
+Изменение периметра и решения по предложениям — действия администратора и
+требуют отдельного права `manage_scope`; выдавать его сканеру не нужно.
 
 Предложение не расширяет периметр само по себе — его подтверждает
-администратор. Требуется право `manage_scope`.
+администратор.
+
+Сквозной сценарий с DomainScope: [Связка DomainScope и
+Hub](perimeter-integration.md).
 
 ## Ручная перепроверка
 

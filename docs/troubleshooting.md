@@ -417,7 +417,7 @@ docker compose -f /opt/domainscope/docker/docker-compose.yml logs domain-scope |
 | Признак                       | Fix                                                                     |
 | ----------------------------- | ----------------------------------------------------------------------- |
 | `401 Unauthorized`            | `DOMAINSCOPE_HUB_API_TOKEN` неверный или истёк                          |
-| `403 Forbidden`               | Service Account не имеет permission на product                          |
+| `403 Forbidden`               | У Service Account нет права `upload_report` на продукт или на его проект |
 | `connection refused`          | `DOMAINSCOPE_HUB_API_ENDPOINT` не доступен. Проверьте сетевую связность |
 | Cycle вообще не делает upload | `DOMAINSCOPE_SARIF_AUTO_UPLOAD=true`?                                   |
 
@@ -426,7 +426,7 @@ docker compose -f /opt/domainscope/docker/docker-compose.yml logs domain-scope |
 ```bash
 # Hub side
 docker compose exec postgres psql -U securityhub -d securityhub -c \
-  "SELECT created_at, source, scanner_name, value FROM scope_proposals
+  "SELECT created_at, source, scanner_name, value FROM scan_scope_proposals
    WHERE created_at > NOW() - INTERVAL '24 hours' ORDER BY created_at DESC LIMIT 20;"
 ```
 
@@ -435,6 +435,14 @@ docker compose exec postgres psql -U securityhub -d securityhub -c \
 ```bash
 docker compose -f /opt/domainscope/docker/docker-compose.yml logs domain-scope | grep proposal
 ```
+
+Три штатные причины, по которым предложений нет и это нормально:
+
+- `DOMAINSCOPE_HUB_ENABLED` не выставлен — клиент Hub не создан, в логе нет строки `hub scope api enabled`;
+- предлагать нечего — новых корневых зон и поддоменов с прошлого цикла не появилось;
+- кандидаты отсечены на стороне сканера: домен уже попадает под **активное** исключение периметра, и предложение не отправляется вовсе (видно в логе уровня debug как `proposal pre-filter`).
+
+Если же в логе есть `403` на `POST .../scope/proposals` — у сервисной учётной записи нет права `upload_report` на проект. Подробнее: [Связка DomainScope и Hub](perimeter-integration.md).
 
 ## NetBox
 

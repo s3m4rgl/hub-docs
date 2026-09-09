@@ -98,6 +98,7 @@ nav:
       - Официальные плагины: plugins-official.md
   - DomainScope:
       - Обзор: domainscope-overview.md
+      - Связка с Hub — полный процесс: perimeter-integration.md
       - Установка: domainscope-install.md
       - Управление сканерами: domainscope-scanners.md
       - Синхронизация с NetBox: domainscope-netbox.md
