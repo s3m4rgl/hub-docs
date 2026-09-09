@@ -5,16 +5,27 @@
 | Переменная | Назначение | Значения | По умолчанию | Обязательна |
 |---|---|---|---|---|
 | `REACT_APP_API_URL` | Базовый URL backend API. Используется и для API-вызовов, и для запроса `/api/v1/auth/config` (определение LOCAL/SSO) | URL `http(s)://host[:port]` | `http://localhost:8082` [code] / `https://hub.example.com` [chart] | Да (в проде) |
-| `REACT_APP_KEYCLOAK_URL` | URL Keycloak для OIDC-логина (SSO) | URL | `""` (chart); `http://localhost:8083` (.env.example) | Только при SSO |
-| `REACT_APP_KEYCLOAK_REALM` | Realm Keycloak | строка | `""` (chart); `securityhub` (.env.example) | Только при SSO |
-| `REACT_APP_KEYCLOAK_CLIENT_ID` | client_id Keycloak | строка | `""` (chart); `securityhub` (.env.example) | Только при SSO |
 | `REACT_APP_NETBOX_BASE_URL` | Если задан — IP в карточке находка'а становятся ссылками на поиск в NetBox (`${URL}/search/?q=${ip}`) | URL или пусто | `""` | Нет |
 | `REACT_APP_APP_ENV` | Окружение. `development` показывает dev-баннер и кнопку dev-логина; `production` их скрывает | `development` \| `production` | `production` (entrypoint fallback); `development` (.env.example) | Нет |
-| `REACT_APP_AUTH_MODE` | Заявленный режим аутентификации. **Фактически не влияет** на фронт (см. ниже) | `LOCAL` \| `SSO` | `LOCAL` [chart] | Нет (no-op) |
+
+## Настроек Keycloak у интерфейса нет
+
+Прежние `REACT_APP_KEYCLOAK_URL`, `REACT_APP_KEYCLOAK_REALM`,
+`REACT_APP_KEYCLOAK_CLIENT_ID` и `REACT_APP_AUTH_MODE` **удалены в 0.33** —
+вместе с чартами, которые их задавали.
+
+Первые три читались единственным модулем, который не использовался ни одной
+страницей; сборщик его выбрасывал, и значения не доходили до бандла.
+`REACT_APP_AUTH_MODE` не читался вовсе. То есть настройка выглядела рабочей,
+не будучи ею: администратор мог выставить realm и не получить ничего.
 
 ## Важно: схема URL и выбор LOCAL/SSO
 
-Реальный режим логина (форма логин/пароль против кнопки «Sign in with Keycloak») определяет **backend** через `GET /api/v1/auth/config`, а не `REACT_APP_AUTH_MODE`. Значение `REACT_APP_AUTH_MODE` из чарта в бандл не подставляется и фронтом не читается — оставлено для совместимости.
+Режим входа — форма логина против кнопок провайдеров — определяет **backend**
+через `GET /api/v1/auth/config`. Оттуда же приходят готовые адреса входа для
+каждого провайдера, поэтому интерфейсу не нужно знать ни адрес IdP, ни realm,
+ни client_id. Настраиваются они у backend (`KEYCLOAK_*`, `OIDC_<ИМЯ>_*`) —
+см. [переменные Hub](env-hub.md).
 
 Из этого следует контракт, который легко нарушить:
 
