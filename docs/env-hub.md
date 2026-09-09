@@ -152,8 +152,6 @@
 | Переменная | Очередь | По умолчанию |
 |---|---|---|
 | `DISPATCHER_WORKERS` | Очередь по умолчанию: диспетчер событий, разбор отчётов | `10` |
-| `JIRA_SYNC_WORKERS` | Создание и обновление задач в Jira | `4` |
-| `JIRA_REVERSE_SYNC_WORKERS` | Перенос статуса из Jira в Hub | `1` |
 | `TELEGRAM_NOTIFICATION_WORKERS` | Уведомления в Telegram | `5` |
 | `MATTERMOST_NOTIFICATION_WORKERS` | Уведомления в Mattermost | `10` |
 | `MAXRU_NOTIFICATION_WORKERS` | Уведомления в MAX | `5` |
@@ -167,21 +165,28 @@
 находок отдельной переменной не имеет — оно на единицу меньше
 `PLUGIN_RUNNER_PER_PLUGIN_LIMIT`.
 
-## Jira (интеграция, маршрутизация, webhook, SSRF-гард)
+## Заведение задач и проверка адреса Jira
+
+Начиная с 0.33 задачи заводит плагин, а не ядро: адрес системы учёта задач,
+ключи проектов и токены хранит он. Переменных, настраивавших встроенную
+интеграцию, больше нет — см. [Интеграция с Jira](integration-jira.md).
+
+**Удалены в 0.33** (оставленные в конфигурации, просто не читаются):
+`FALLBACK_JIRA_URL`, `FEATURE_JIRA_REVERSE_SYNC`,
+`JIRA_REVERSE_SYNC_INTERVAL_MINUTES`, `JIRA_REVERSE_SYNC_BATCH_SIZE`,
+`JIRA_SYNC_WORKERS`, `JIRA_REVERSE_SYNC_WORKERS`,
+`FEATURE_JIRA_ENGINE_ROUTING`, `FEATURE_JIRA_WEBHOOK`.
+
+Остались те, что проверяют адрес перед обращением. Они по-прежнему нужны:
+адрес приходит из настроек, а обращение делает Hub.
 
 | Переменная | Назначение | Значения | По умолчанию | Компонент |
 |---|---|---|---|---|
-| `FALLBACK_JIRA_URL` | URL Jira, если у проекта не задан `jira_config.base_url` | URL | `""` | оба |
 | `FEATURE_FINDING_COPY` | Включить fan-out копирование находок | `true` \| `false` | `false` | оба |
-| `FEATURE_JIRA_REVERSE_SYNC` | Включить периодический Jira→Hub sync статусов | `true` \| `false` | `false` | оба |
-| `JIRA_REVERSE_SYNC_INTERVAL_MINUTES` | Период тика reverse-sync | целое (мин) | `60` | оба |
-| `JIRA_REVERSE_SYNC_BATCH_SIZE` | Размер батча reverse-sync | целое | `500` | оба |
-| `FEATURE_JIRA_ENGINE_ROUTING` | Per-engine issuetype override (`issuetype_by_engine`) | `true` \| `false` | `true` | worker |
-| `FEATURE_JIRA_WEBHOOK` | Jira→Hub webhook receiver (при `false` → 404) | `true` \| `false` | `true` | backend |
-| `HUB_BASE_URL` | Публичный URL Hub для callback-URL webhook и ссылок | URL | `""` | оба |
-| `JIRA_ALLOW_HTTP` | Разрешить `http://` для Jira base URL (SSRF-гард) | `true` \| `false` | `false` | оба |
-| `JIRA_ALLOW_LOCAL_DIAL` | Разрешить обращение к локальным/приватным адресам Jira | `true` \| `false` | `false` | оба |
-| `JIRA_BASE_URL_ALLOWLIST` | Allowlist допустимых Jira base URL | CSV/список | `""` (без ограничения) | оба |
+| `HUB_BASE_URL` | Публичный URL Hub для ссылок и адресов обратных вызовов | URL | `""` | оба |
+| `JIRA_ALLOW_HTTP` | Разрешить `http://` для адреса Jira | `true` \| `false` | `false` | оба |
+| `JIRA_ALLOW_LOCAL_DIAL` | Разрешить обращение к приватным адресам | `true` \| `false` | `false` | оба |
+| `JIRA_BASE_URL_ALLOWLIST` | Список допустимых узлов | CSV/список | `""` (без ограничения) | оба |
 
 ## Dual-verify (Hub ↔ DomainScope)
 

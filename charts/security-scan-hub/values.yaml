@@ -84,7 +84,6 @@ backend:
       keycloakClientId: ""
       telegramBotToken: ""
       notificationsDryRun: "false"
-      fallbackJiraUrl: ""
       llmBaseUrl: ""
       llmModel: "glm-4-plus"
       llmDryRun: "true"      # по умолчанию: не обращаться к LLM, пока не настроено
