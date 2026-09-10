@@ -166,7 +166,7 @@ Hub читает NetBox по URL из БД (per-project). NetBox URL и токе
 
 | Симптом                      | Что проверить                                                                                      |
 | ---------------------------- | -------------------------------------------------------------------------------------------------- |
-| Frontend: IP не кликабельный | `REACT_APP_NETBOX_BASE_URL` задан и frontend пересобран. В Helm — задан в `frontend.env.netboxUrl` |
+| Frontend: IP не кликабельный | `REACT_APP_NETBOX_BASE_URL` задан **и контейнер перезапущен**. Пересобирать образ НЕ нужно: значение подменяется в бандле на старте (`entrypoint.sh`), см. [переменные frontend](env-frontend.md). В Helm — `frontend.frontend.env.netboxUrl` |
 | Sync падает с `401`          | API token истёк или у токена нет permissions                                                       |
 | Sync `403 Forbidden`         | NetBox IP allowlist у токена не включает IP Hub-стенда                                             |
 | После sync пропали entries   | Возможно, фильтр `tags` слишком узкий. Запустите sync в dry-run режиме (UI)                        |
