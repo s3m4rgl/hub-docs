@@ -28,9 +28,6 @@
 | `KC_AUTO_PROVISION` | Автосоздание пользователей в БД при первом входе по внешнему JWT | `true` \| `false` | `false` | оба |
 | `FEATURE_SECURITY_HUB_INTEGRATION` | Мастер-флаг прозрачного SSO + эндпоинта `/findings/by-correlation-keys` | `true` \| `false` | `false` | оба |
 | `ATOM_IDP_BASE_URL` | Доп. CORS-origin для atom-idp | URL | `""` | backend |
-| `GOOGLE_OAUTH_CLIENT_ID` | Google OAuth client id | строка | `""` | оба |
-| `GOOGLE_OAUTH_CLIENT_SECRET` | Google OAuth client secret | строка (секрет) | `""` | оба |
-| `GOOGLE_OAUTH_REDIRECT_URL` | Google OAuth redirect URL | URL | `http://localhost:8080/api/v1/auth/google/callback` | оба |
 
 ### Generic OIDC-провайдеры (`OIDC_<NAME>_*`)
 
@@ -395,6 +392,7 @@
 | Переменная | Прежнее назначение | Компонент |
 |---|---|---|
 | `CLEANUP_SCHEDULE` | Расписание очистки отчётов — игнорируется | worker |
+| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REDIRECT_URL` | Отдельная ветка входа через Google. Её больше нет: Google подключается как обычный OIDC-провайдер через `SSO_PROVIDERS` и `OIDC_<ИМЯ>_*` | оба |
 | `REFRESH_CLEANUP_SCHEDULE` | Расписание очистки токенов — игнорируется | worker |
 | `MATTERMOST_NOTIFICATION_WORKERS` | Очередь уведомлений Mattermost — удалена в 0.33 вместе с каналом в ядре | worker |
 | `MAXRU_NOTIFICATION_WORKERS` | То же для MAX | worker |
