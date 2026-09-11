@@ -233,9 +233,9 @@ flowchart TD
 
 | Переменная | Назначение |
 | --- | --- |
-| `PLUGIN_RUNNER_GLOBAL_LIMIT` | Предел одновременно работающих процессов плагинов |
-| `PLUGIN_RUNNER_PER_PLUGIN_LIMIT` | Предел одновременных запусков одного плагина |
-| `PLUGIN_RUNNER_KEEP_WARM_SECONDS` | Сколько держать процесс готовым после работы |
+| `PLUGIN_RUNNER_GLOBAL_LIMIT` | Предел одновременно работающих процессов плагинов (по умолчанию 20) |
+| `PLUGIN_RUNNER_PER_PLUGIN_LIMIT` | Предел одновременных запусков одного плагина (по умолчанию 4) |
+| `PLUGIN_RUNNER_KEEP_WARM_SECONDS` | Сколько держать процесс готовым после работы (по умолчанию 300 с) |
 | `PLUGIN_FINDING_SOURCE_SYNC_WORKERS` | Параллелизм опроса источников |
 | `WASM_RUNNER_BINARY_PATH` | Путь к исполняемому файлу среды исполнения |
 
