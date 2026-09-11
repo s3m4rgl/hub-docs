@@ -153,7 +153,7 @@ services:
     restart: unless-stopped
 
   domainscope:
-    image: dexionius/domain-scope:${DS_VERSION:-0.32}
+    image: dexionius/domain-scope:${DS_VERSION:-0.33}
     container_name: ds-scanner
     # Entrypoint-обёртка: ждёт scanner.env от bootstrap, экспортирует токен
     # и product_id, затем запускает /domain-scope daemon run.
