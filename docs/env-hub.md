@@ -154,8 +154,7 @@
 | Переменная | Очередь | По умолчанию |
 |---|---|---|
 | `DISPATCHER_WORKERS` | Очередь по умолчанию: диспетчер событий, разбор отчётов | `10` |
-| `SARIF_PROCESSING_WORKERS` | Разбор загруженных отчётов | `4` |
-| `TELEGRAM_NOTIFICATION_WORKERS` | Уведомления в Telegram | `5` |
+| `SARIF_PROCESSING_WORKERS` | Разбор загруженных отчётов. Отдельная очередь: пик памяти ингеста больше не задаётся числом, подобранным под рассылку уведомлений | `4` |
 | `EMAIL_NOTIFICATION_WORKERS` | Уведомления по электронной почте встроенным путём | `5` |
 | `FINDING_COPY_WORKERS` | Копирование находок между продуктами | `4` |
 | `DUAL_VERIFY_WORKERS` | Перепроверка вторым источником | `2` |
@@ -400,6 +399,7 @@
 | `MATTERMOST_NOTIFICATION_WORKERS` | Очередь уведомлений Mattermost — удалена в 0.33 вместе с каналом в ядре | worker |
 | `MAXRU_NOTIFICATION_WORKERS` | То же для MAX | worker |
 | `MATTERMOST_ALLOW_LOCAL_DIAL` | SSRF-гард канала Mattermost. Канал ведёт плагин, переменную не читает никто; при старте об этом сообщается | оба |
+| `TELEGRAM_NOTIFICATION_WORKERS` | Очередь уведомлений Telegram. Канал ведёт плагин, очереди и воркера нет | worker |
 | `FALLBACK_JIRA_URL`, `FEATURE_JIRA_REVERSE_SYNC`, `JIRA_REVERSE_SYNC_INTERVAL_MINUTES`, `JIRA_REVERSE_SYNC_BATCH_SIZE`, `JIRA_REVERSE_SYNC_WORKERS`, `JIRA_SYNC_WORKERS`, `FEATURE_JIRA_ENGINE_ROUTING`, `FEATURE_JIRA_WEBHOOK` | Встроенная интеграция с Jira — удалена в 0.33, задачи ведут плагины | оба |
 | `JIRA_ALLOW_HTTP`, `JIRA_ALLOW_LOCAL_DIAL`, `JIRA_BASE_URL_ALLOWLIST` | Общий SSRF-рычаг. Заменён переменными подсистем (`VCS_*`, `RESCAN_*`, `IAC_SOURCE_*`); при остатке в окружении Hub предупреждает | оба |
 
