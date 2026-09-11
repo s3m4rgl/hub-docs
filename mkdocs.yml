@@ -89,7 +89,7 @@ nav:
       - Сканеры: env-scanners.md
   - Интеграции:
       - SSO и OIDC: integration-sso.md
-      - Jira: integration-jira.md
+      - Учёт задач: integration-jira.md
       - Уведомления: integration-notifications.md
       - NetBox: integration-netbox.md
       - AI-триаж и песочница: integration-llm.md
@@ -104,6 +104,7 @@ nav:
       - Происхождение записей: domainscope-trails.md
   - Справочник и эксплуатация:
       - REST API: api.md
+      - Консольный клиент: cli.md
       - Эксплуатация: operations.md
       - Обновления: upgrades.md
       - Ручная перепроверка: manual-rescan.md
