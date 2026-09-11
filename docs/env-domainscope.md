@@ -173,16 +173,19 @@
 | `DOMAINSCOPE_ZAP_INSTANCES_JSON` | JSON-массив инстансов ZAP (содержит API-ключи, секрет). Перезаписывает YAML | JSON `[{"url":…,"api_key":…}]` | пусто (обязателен при ZAP enabled) |
 | `DOMAINSCOPE_ZAP_CREDENTIALS_JSON` | JSON-массив per-host creds (секрет) | JSON `[{"host","username","password","form_url"}]` | пусто |
 
-## Metabase (CMDB-обогащение)
+## Обогащение из CMDB — на стороне Hub
 
-| Переменная | Назначение | Значения | По умолчанию |
-|---|---|---|---|
-| `DOMAINSCOPE_METABASE_ENABLED` | CMDB-обогащение IP из Metabase | bool | `false` |
-| `DOMAINSCOPE_METABASE_BASE_URL` | URL Metabase | URL | пусто |
-| `DOMAINSCOPE_METABASE_API_TOKEN` | X-Metabase-API-Key (секрет) | строка | пусто |
-| `DOMAINSCOPE_METABASE_INSECURE` | Разрешить `http://` base_url в prod | bool | `false` |
-| `DOMAINSCOPE_METABASE_DATABASE_ID` | ID базы данных в Metabase | int | `2` |
-| `DOMAINSCOPE_METABASE_SERVERS_TABLE_ID` | ID таблицы «Servers And Clusters» | int | `19` |
+Обогащение адресов сведениями из Metabase **убрано из DomainScope в 0.32**:
+переменные `DOMAINSCOPE_METABASE_*` больше не читаются. Ту же работу делает
+плагин Hub `metabase-cmdb`, причём для всех находок, а не только для находок
+периметра: соответствие «колонка → тег» задаётся в настройках плагина.
+
+Перед удалением стороны DomainScope теги обеих реализаций сверялись на живой
+инсталляции; набор тегов от плагина оказался не хуже прежнего.
+
+**Что делать:** установить плагин `metabase-cmdb` в Hub, см.
+[Плагины](plugins.md). Переменные `DOMAINSCOPE_METABASE_*` из конфигурации
+можно убрать — они ни на что не влияют.
 
 ## Адрес проверки состояния
 
@@ -229,6 +232,5 @@
 - `SARIF_ENABLED=true`+`SARIF_AUTO_UPLOAD=true` → `SARIF_PRODUCT_ID`, `SARIF_API_ENDPOINT`, `SARIF_API_TOKEN`.
 - `OPENVAS_ENABLED=true` → `OPENVAS_HOST`, `OPENVAS_PORT`, `OPENVAS_USERNAME`, `OPENVAS_PASSWORD`.
 - `DOMAINSCOPE_ZAP_ENABLED=true` → `DOMAINSCOPE_ZAP_INSTANCES_JSON` (≥1 инстанс с `url`+`api_key`).
-- `METABASE_ENABLED=true` → `METABASE_BASE_URL`.
 - `VERIFY_API_KEY` задан → `VERIFY_HMAC_SECRET`, `HUB_CALLBACK_API_KEY`, `HUB_CALLBACK_HMAC_SECRET`.
 - В **production** все secret-несущие эндпоинты обязаны быть `https://`, если не выставлен соответствующий `*_INSECURE=true`.
