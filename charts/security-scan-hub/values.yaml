@@ -159,9 +159,10 @@ frontend:
       tag: "0.33"
       pullPolicy: IfNotPresent
     ## Pod securityContext. По умолчанию — nginx-uid 101 (non-root).
-    ## Если образ копирует бандл как root:root, runtime-инъекция env через
-    ## `sed -i` в entrypoint.sh ломается под non-root — тогда переопределите
-    ## (например, runAsUser: 0). Подробнее — комментарий в frontend-deployment.yaml.
+    ## С 0.33 образ и сам работает от uid 101: бандл и конфиги принадлежат
+    ## 101:101, pid-файл пишется в /tmp. Переопределение (runAsUser: 0) нужно
+    ## только для образов 0.32 и старше, где бандл копировался как root:root и
+    ## runtime-инъекция env через `sed -i` ломалась под non-root.
     podSecurityContext:
       runAsNonRoot: true
       runAsUser: 101

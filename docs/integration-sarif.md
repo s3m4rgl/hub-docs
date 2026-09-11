@@ -327,6 +327,33 @@ sast:
       -F "file=@gosec.sarif"
 ```
 
+### Вместо curl: гейт `sshub`
+
+С 0.33 в поставке есть консольный клиент. Он загружает отчёт, **дожидается
+разбора** и валит сборку, если в отчёте есть новые находки выше порога:
+
+```yaml
+sast:
+  stage: test
+  script:
+    - gosec -fmt=sarif -out=gosec.sarif ./... || true
+    - sshub gate --product "$HUB_PRODUCT_ID" --file gosec.sarif --fail-on HIGH
+  variables:
+    SSHUB_SERVER: https://hub.example.com
+    # SSHUB_API_KEY — в переменных CI, masked + protected
+```
+
+Код возврата `1` означает «гейт не пройден», `2` — «инструмент не смог вынести
+вердикт». Различайте их в пайплайне: подробности — [Консольный
+клиент](cli.md).
+
+### Находка без отчёта
+
+Если инструмент не умеет SARIF, находку можно завести напрямую —
+`POST /api/v1/products/<id>/findings` с тем же ключом (право `upload_report`)
+или командой `sshub findings create`. Дальше она ничем не отличается от
+загруженной.
+
 ## Какие инструменты подойдут
 
 Требование одно: корректный SARIF 2.1.0. Этот формат выгружают
