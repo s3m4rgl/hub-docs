@@ -10,3 +10,4 @@ __pycache__/
 charts/*/*.tgz
 charts/*/charts/
 site/
+.worktrees/
