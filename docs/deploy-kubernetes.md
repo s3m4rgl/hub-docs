@@ -18,6 +18,16 @@ Umbrella-чарт `hub-platform` собирает следующие subcharts:
 
 Дополнительно (вне umbrella): `sshub-atlassian-secrets-scanner` — CronJob для сканирования секретов в Jira/Confluence.
 
+!!! warning "Сканерам с PVC нужен `fsGroup`"
+
+    OWASP ZAP работает под uid/gid `1000` и хранит сессии на томе. Без `fsGroup`
+    том у обычного CSI приезжает как `root:root`, и под уходит в
+    `CrashLoopBackOff` с «The home path is not writable». Чарт задаёт нужный
+    `podSecurityContext` сам — не вычищайте его при переопределении значений.
+    На k3s (`local-path`, права `0777`) поломка не воспроизводится, поэтому
+    проверка на нём такой дефект не ловит. Подробнее:
+    [Сканеры](env-scanners.md#owasp-zap).
+
 ## Получение чартов
 
 Помимо стандартного `helm repo` или OCI-pull, поставка может приходить tarball'ом со всеми чартами и `values.yaml`:
