@@ -104,6 +104,18 @@ if [ "$CHECKED" -eq 0 ]; then
   exit 1
 fi
 
+# Ноль найденных пинов — ОТКАЗ, а не успех. Это значит либо что шаблоны
+# извлечения устарели (файл переехал, поменялся синтаксис compose), либо что
+# скрипт запущен не из корня репозитория. В обоих случаях «OK» — ложь ровно
+# про то, ради чего гейт заведён: доки читались как корректные, пока установка
+# падала на ImagePullBackOff.
+if [ "$CHECKED" -eq 0 ]; then
+  echo "FAIL: found no image pins to check at all, in $(pwd)." >&2
+  echo "      Expected pins in docker-compose.yml, .env.example and charts/*/values.yaml." >&2
+  echo "      Either the extraction patterns are stale or this ran outside the repository root." >&2
+  exit 1
+fi
+
 if [ "$FAILED" -gt 0 ]; then
   echo "FAIL: ${FAILED} of ${CHECKED} pinned image tag(s) do not exist in the registry." >&2
   echo "      A pin that cannot be pulled turns every fresh install into ImagePullBackOff." >&2
