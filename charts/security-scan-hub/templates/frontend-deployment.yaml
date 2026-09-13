@@ -33,14 +33,6 @@ spec:
         env:
         - name: REACT_APP_API_URL
           value: {{ tpl (.Values.frontend.frontend.env.apiUrl | default "") . | quote }}
-        - name: REACT_APP_AUTH_MODE
-          value: {{ .Values.frontend.frontend.env.authMode | quote }}
-        - name: REACT_APP_KEYCLOAK_URL
-          value: {{ .Values.frontend.frontend.env.keycloakUrl | quote }}
-        - name: REACT_APP_KEYCLOAK_REALM
-          value: {{ .Values.frontend.frontend.env.keycloakRealm | quote }}
-        - name: REACT_APP_KEYCLOAK_CLIENT_ID
-          value: {{ .Values.frontend.frontend.env.keycloakClientId | quote }}
         - name: REACT_APP_NETBOX_BASE_URL
           value: {{ .Values.frontend.frontend.env.netboxUrl | default "" | quote }}
         - name: KUBERNETES_CLUSTER_DOMAIN

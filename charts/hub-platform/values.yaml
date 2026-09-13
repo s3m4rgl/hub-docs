@@ -147,8 +147,10 @@ hub:
   frontend:
     frontend:
       env:
+        ## Интерфейсу нужен только адрес backend: режим входа и адреса
+        ## провайдеров он спрашивает у `/api/v1/auth/config`. Прежний
+        ## authMode здесь задавался, но бандлом не читался.
         apiUrl: 'https://{{ .Values.global.domain | default "hub.example.com" }}'
-        authMode: LOCAL
   iacScanner:
     ## По умолчанию ВЫКЛЮЧЕН: iac-scanner запрашивает /api/v1/products/scan-enabled,
     ## который требует Service Account (со scope list_products). SA создаётся

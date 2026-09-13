@@ -84,7 +84,6 @@ backend:
       keycloakClientId: ""
       telegramBotToken: ""
       notificationsDryRun: "false"
-      fallbackJiraUrl: ""
       llmBaseUrl: ""
       llmModel: "glm-4-plus"
       llmDryRun: "true"      # по умолчанию: не обращаться к LLM, пока не настроено
@@ -177,11 +176,11 @@ frontend:
         memory: "256Mi"
     env:
       apiUrl: https://hub.example.com
-      authMode: LOCAL
-      keycloakUrl: ""
-      keycloakRealm: ""
-      keycloakClientId: ""
       netboxUrl: ""
+      ## Настроек Keycloak у интерфейса НЕТ, и это не упущение: он спрашивает
+      ## у backend `/api/v1/auth/config` и получает оттуда список провайдеров
+      ## с готовыми адресами входа. Прежние authMode/keycloak* здесь
+      ## задавались, но бандлом не читались — задавайте их у backend.
 
 postgres:
   image:

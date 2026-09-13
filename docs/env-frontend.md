@@ -5,16 +5,23 @@
 | Переменная | Назначение | Значения | По умолчанию | Обязательна |
 |---|---|---|---|---|
 | `REACT_APP_API_URL` | Базовый URL backend API. Используется и для API-вызовов, и для запроса `/api/v1/auth/config` (определение LOCAL/SSO) | URL `http(s)://host[:port]` | `http://localhost:8082` [code] / `https://hub.example.com` [chart] | Да (в проде) |
-| `REACT_APP_KEYCLOAK_URL` | URL Keycloak для OIDC-логина (SSO) | URL | `""` (chart); `http://localhost:8083` (.env.example) | Только при SSO |
-| `REACT_APP_KEYCLOAK_REALM` | Realm Keycloak | строка | `""` (chart); `securityhub` (.env.example) | Только при SSO |
-| `REACT_APP_KEYCLOAK_CLIENT_ID` | client_id Keycloak | строка | `""` (chart); `securityhub` (.env.example) | Только при SSO |
 | `REACT_APP_NETBOX_BASE_URL` | Если задан — IP в карточке находка'а становятся ссылками на поиск в NetBox (`${URL}/search/?q=${ip}`) | URL или пусто | `""` | Нет |
 | `REACT_APP_APP_ENV` | Окружение. `development` показывает dev-баннер и кнопку dev-логина; `production` их скрывает | `development` \| `production` | `production` (entrypoint fallback); `development` (.env.example) | Нет |
-| `REACT_APP_AUTH_MODE` | Заявленный режим аутентификации. **Фактически не влияет** на фронт (см. ниже) | `LOCAL` \| `SSO` | `LOCAL` [chart] | Нет (no-op) |
 
-## Важно: схема URL и выбор LOCAL/SSO
+## Настроек провайдера входа у интерфейса нет
 
-Реальный режим логина (форма логин/пароль против кнопки «Sign in with Keycloak») определяет **backend** через `GET /api/v1/auth/config`, а не `REACT_APP_AUTH_MODE`. Значение `REACT_APP_AUTH_MODE` из чарта в бандл не подставляется и фронтом не читается — оставлено для совместимости.
+`REACT_APP_AUTH_MODE`, `REACT_APP_KEYCLOAK_URL`, `REACT_APP_KEYCLOAK_REALM` и
+`REACT_APP_KEYCLOAK_CLIENT_ID` **бандлом не читаются** — в 0.33 их нет в коде
+интерфейса вовсе, а из чартов поставки убраны и сами переменные. Настройка
+выглядела рабочей, не будучи ею: администратор мог выставить realm и не
+получить ничего.
+
+Режим входа — форма логина против кнопок провайдеров — и адреса самих
+провайдеров интерфейс получает от backend через `GET /api/v1/auth/config`.
+Поэтому знать адрес IdP, realm и `client_id` ему не нужно: они задаются у
+backend (`KEYCLOAK_*`, `OIDC_<ИМЯ>_*`) — см. [переменные Hub](env-hub.md).
+
+## Важно: схема URL
 
 Из этого следует контракт, который легко нарушить:
 

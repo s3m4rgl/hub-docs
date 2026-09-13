@@ -107,6 +107,9 @@
 | `LLM_WORKERS` | Кол-во LLM-worker | целое | `5` [code] | оба |
 | `LLM_PROMPTS_DIR` | Каталог с промптами | путь | `""` | оба |
 | `LLM_REQUEST_TIMEOUT_SECONDS` | Таймаут запроса к LLM | целое (сек) | `180` | оба |
+| `LLM_TEMPERATURE` | Температура запросов к модели. Значение вне диапазона или нечисловое заменяется умолчанием — с сообщением в журнале, а не молча | `0.0`…`2.0` | `0.1` | оба |
+| `LLM_CONFIRM_BEFORE_DISMISS` | Применять закрывающий вердикт модели только после подтверждения повторным вызовом | `true` \| `false` | `true` | оба |
+| `LLM_RISK_ACCEPTED_TTL_DAYS` | Срок, на который модель принимает риск по находке. `0` — не принимать | целое ≥ 0 | `180` | оба |
 | `SANDBOX_TYPE` | Тип песочницы | `""` (выкл) \| `docker` \| `kubernetes` | `""` [code] / worker `kubernetes` [chart] | worker |
 | `SANDBOX_IMAGE` | Docker-образ песочницы | image ref | `dexionius/sshub-sandbox-tools:latest` | оба |
 | `SANDBOX_TIMEOUT_SECONDS` | Таймаут выполнения в песочнице | целое (сек) | `120` | оба |

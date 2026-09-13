@@ -101,8 +101,6 @@ spec:
           value: {{ .Values.backend.backend.env.telegramBotToken | quote }}
         - name: NOTIFICATIONS_DRY_RUN
           value: {{ .Values.backend.backend.env.notificationsDryRun | quote }}
-        - name: FALLBACK_JIRA_URL
-          value: {{ .Values.backend.backend.env.fallbackJiraUrl | quote }}
         - name: LOG_MAX_SIZE_MB
           value: {{ .Values.backend.backend.env.logMaxSizeMb | quote }}
         - name: LOG_MAX_BACKUPS

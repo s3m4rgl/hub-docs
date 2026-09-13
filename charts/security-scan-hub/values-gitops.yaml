@@ -36,13 +36,6 @@ worker:
     env:
       llmDryRun: "false"
 
-frontend:
-  frontend:
-    env:
-      authMode: SSO
-      keycloakRealm: securityhub
-      keycloakClientId: securityhub
-
 ## Ingress production-уровня: nginx + Let's Encrypt
 ingress:
   className: nginx
