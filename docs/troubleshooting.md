@@ -484,11 +484,14 @@ ERROR sandbox failed: image not found
 docker compose -f /opt/domainscope/docker/docker-compose.yml logs domain-scope | grep -i subfinder
 ```
 
-| Признак                             | Fix                                                                  |
-| ----------------------------------- | -------------------------------------------------------------------- |
-| `subfinder: no sources configured`  | Discovery-провайдеры недоступны из сети — проверьте outbound HTTPS |
-| `DNS resolve failed`                | Нет DNS-resolver'a в контейнере. Проверьте `/etc/resolv.conf`        |
-| Cycle крутится, но domains в БД нет | Проверьте `DOMAINSCOPE_DOMAINS` — задан?                             |
+| Признак | Fix |
+| --- | --- |
+| `subfinder failed` с ошибкой | источники subfinder недоступны из сети — проверьте исходящий HTTPS |
+| В `subfinder started` значение `enumerating` меньше `domains` | это расписание, а не сбой: каждая зона перечисляется не чаще раза в 24 часа и не больше 25 зон за цикл, остальные берут поддомены из БД (`reused_from_db`) |
+| Много строк `ip resolve failed` (уровень debug) | для найденных subfinder имён это норма; если не резолвится всё — проверьте `/etc/resolv.conf` или задайте `SCANNER_DNS_SERVER` |
+| `wildcard DNS detected for zone` | у зоны wildcard-запись: поддомены, резолвящиеся только в эти адреса, отбрасываются |
+| `seed domain blocked by hub scope` | при подключённом Hub исходная зона не покрыта включением периметра или попала под исключение |
+| Цикл идёт, но доменов в БД нет | проверьте, что задан хотя бы один источник: `DOMAINSCOPE_DOMAINS`, включения периметра Hub или зоны NetBox DNS |
 
 ### Nuclei не сканирует
 
@@ -522,7 +525,7 @@ docker compose -f /opt/domainscope/docker/docker-compose.yml logs domain-scope |
 ```bash
 # Hub side
 docker compose exec postgres psql -U securityhub -d securityhub -c \
-  "SELECT created_at, source, scanner_name, value FROM scan_scope_proposals
+  "SELECT created_at, status, proposed_action, scanner_name, proposed_value FROM scan_scope_proposals
    WHERE created_at > NOW() - INTERVAL '24 hours' ORDER BY created_at DESC LIMIT 20;"
 ```
 
@@ -532,11 +535,22 @@ docker compose exec postgres psql -U securityhub -d securityhub -c \
 docker compose -f /opt/domainscope/docker/docker-compose.yml logs domain-scope | grep proposal
 ```
 
-Три штатные причины, по которым предложений нет и это нормально:
+При успешной отправке в логе есть строка `subdomain proposals submitted` с числом
+предложений, при ошибке — `subdomain proposals: failed to post`.
+
+Штатные причины, по которым предложений нет и это нормально:
 
 - `DOMAINSCOPE_HUB_ENABLED` не выставлен — клиент Hub не создан, в логе нет строки `hub scope api enabled`;
-- предлагать нечего — новых корневых зон и поддоменов с прошлого цикла не появилось;
-- кандидаты отсечены на стороне сканера: домен уже попадает под **активное** исключение периметра, и предложение не отправляется вовсе (видно в логе уровня debug как `proposal pre-filter`).
+- предлагать нечего — все найденные поддомены уже имеют точную запись включения, а у Hub на каждое значение со своей активной записью предложение не создаётся;
+- кандидаты отсечены на стороне сканера: поддомен попадает под **активное** исключение периметра или помечен `ignore-scan` в NetBox (в логе уровня debug — `domain excluded by hub scope`);
+- зона ещё не перечислялась: за цикл перечисляется не больше 25 зон и каждая — не чаще раза в сутки, поэтому новая зона в периметре даёт предложения не сразу (`subfinder started` показывает `enumerating` и `reused_from_db`).
+
+!!! warning "Известное ограничение: корневые зоны из TLS-сертификатов при подключённом Hub не предлагаются"
+    Новая корневая зона, найденная в сертификате, проверяется сопоставлением
+    периметра Hub и, не будучи покрыта включением, отсекается до отправки
+    (в логе уровня debug — `san candidate excluded by hub scope`). Отсутствие
+    таких предложений — не сбой связки. Исправление отслеживается в
+    [DomainScope#4](https://gitlab.com/hub_infosec/DomainScope/-/work_items/4).
 
 Если же в логе есть `403` на `POST .../scope/proposals` — у сервисной учётной записи нет права `upload_report` на проект. Подробнее: [Связка DomainScope и Hub](perimeter-integration.md).
 

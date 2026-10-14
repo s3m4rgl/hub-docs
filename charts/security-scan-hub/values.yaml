@@ -70,7 +70,7 @@ backend:
     env:
       appEnv: production
       serverPort: "8082"
-      dbHost: ""              # авто = <fullname>-postgres
+      dbHost: ""              # пусто = встроенный <fullname>-postgres; обязателен при postgres.enabled=false
       dbPort: "5432"
       dbName: securityhub
       dbUser: securityhub
@@ -122,7 +122,7 @@ worker:
         memory: "2Gi"
     env:
       appEnv: production
-      dbHost: ""              # авто = <fullname>-postgres
+      dbHost: ""              # пусто = адрес backend (dbHost или встроенный <fullname>-postgres)
       dbPort: "5432"
       dbName: securityhub
       dbUser: securityhub
@@ -182,7 +182,12 @@ frontend:
       ## с готовыми адресами входа. Прежние authMode/keycloak* здесь
       ## задавались, но бандлом не читались — задавайте их у backend.
 
+## Встроенный PostgreSQL. enabled: false — Deployment, Service и PVC базы не
+## создаются; адрес внешней базы задаётся в backend.backend.env.dbHost (порт, имя
+## и пользователь — там же), пароль — secrets.dbPassword. Worker без своего
+## dbHost берёт адрес backend.
 postgres:
+  enabled: true
   image:
     repository: postgres
     tag: "15"

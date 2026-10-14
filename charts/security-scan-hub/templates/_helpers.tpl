@@ -164,3 +164,37 @@ TLS Secret name to reference from the ingress.
 {{ include "chart.fullname" . }}-tls
 {{- end -}}
 {{- end -}}
+
+{{/*
+Подключение к PostgreSQL Hub — единый источник для backend, worker, Secret
+(databaseUrl/iacScannerDsn) и seed-admin Job.
+
+Адрес — backend.backend.env.dbHost; пусто → встроенная база <fullname>-postgres.
+С внешним адресом порт, имя базы и пользователь берутся у backend; со встроенной
+— из postgres.env и 5432, как и раньше.
+
+postgres.enabled=false без dbHost — ошибка рендера: иначе backend и worker
+молча смотрели бы на несуществующий сервис <fullname>-postgres.
+*/}}
+{{- define "chart.dbHost" -}}
+{{- $h := .Values.backend.backend.env.dbHost -}}
+{{- if $h -}}
+{{- $h -}}
+{{- else if .Values.postgres.enabled -}}
+{{- printf "%s-postgres" (include "chart.fullname" .) -}}
+{{- else -}}
+{{- fail "postgres.enabled=false: задайте backend.backend.env.dbHost (в hub-platform — hub.backend.backend.env.dbHost) — адрес внешнего PostgreSQL" -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "chart.dbPort" -}}
+{{- if .Values.backend.backend.env.dbHost -}}{{- default "5432" .Values.backend.backend.env.dbPort -}}{{- else -}}5432{{- end -}}
+{{- end -}}
+
+{{- define "chart.dbName" -}}
+{{- if .Values.backend.backend.env.dbHost -}}{{- .Values.backend.backend.env.dbName -}}{{- else -}}{{- .Values.postgres.env.postgresDb -}}{{- end -}}
+{{- end -}}
+
+{{- define "chart.dbUser" -}}
+{{- if .Values.backend.backend.env.dbHost -}}{{- .Values.backend.backend.env.dbUser -}}{{- else -}}{{- .Values.postgres.env.postgresUser -}}{{- end -}}
+{{- end -}}

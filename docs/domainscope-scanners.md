@@ -19,10 +19,34 @@ DomainScope содержит шесть независимых сканеров.
 
 **Что делает:**
 
-- Запускает discovery для каждого seed-домена из `DOMAINSCOPE_DOMAINS` (через встроенный subfinder)
-- Все найденные поддомены → DNS resolve (A/AAAA/CNAME записей)
-- Новые домены добавляются в БД с `source=subfinder`
-- Опционально: тянет дополнительные seed-домены из Hub (`scope_entry`) и NetBox (`netbox_dns`)
+- Собирает исходные зоны: `DOMAINSCOPE_DOMAINS`, включения периметра Hub
+  (`scope_entry`) и зоны NetBox DNS (`netbox_dns`, только при включённом
+  экспорте DNS). Корни из `DOMAINSCOPE_IGNORED_DOMAINS` выбрасываются; при
+  подключённом Hub остаются только зоны, которые допускает периметр Hub
+- Для зон, у которых подошёл срок, запускает встроенный subfinder — пассивное
+  перечисление по набору источников по умолчанию, без медленных источников и
+  без ключей API; зоны идут строго по одной
+- Резолвит зону и все её поддомены; сохраняются **только IPv4-адреса**
+- Отбрасывает поддомены, которые резолвятся только в wildcard-адреса зоны
+  (8 проб случайными именами)
+- Новые поддомены сохраняются в БД с `source=subfinder`. Без Hub они
+  сканируются сразу; при подключённом Hub поддомен без точной записи включения
+  не сканируется и уходит в Hub предложением
+
+!!! warning "Известное ограничение: только IPv4, CNAME не сохраняется"
+    Резолвер проходит цепочку CNAME, но сохраняет только итоговые IPv4-адреса:
+    адреса IPv6 отбрасываются, промежуточные имена CNAME нигде не
+    записываются. Хосты, доступные только по IPv6, не сканируются.
+    Исправление отслеживается в [DomainScope#5](https://gitlab.com/hub_infosec/DomainScope/-/work_items/5).
+
+!!! warning "Известное ограничение: расписание зон не настраивается (0.33)"
+    Каждая зона перечисляется не чаще раза в 24 часа, за цикл — не больше 25
+    зон: сначала никогда не перечислявшиеся, затем самые давние. У пропущенных
+    зон известные поддомены берутся из БД и резолвятся заново. Оба значения
+    зашиты в код, переменных окружения для них нет; расписание хранится в
+    памяти и после перезапуска начинается заново. Поэтому новый поддомен старой
+    зоны появляется с задержкой до суток и больше. Исправление отслеживается в
+    [DomainScope#9](https://gitlab.com/hub_infosec/DomainScope/-/work_items/9).
 
 Что именно перечисляется, когда поддомен сканируется сразу, а когда уходит
 предложением в Hub, и чего discovery не умеет — на странице
@@ -38,21 +62,33 @@ DOMAINSCOPE_TIME_LOOP_DISCOVERY=21600        # каждые 6 часов
 **Логи:**
 
 ```
-INFO Subfinder cycle starting, seeds=2
-INFO  example.com: 47 new subdomains found
-INFO  subsidiary.com: 12 new subdomains found
-INFO DNS resolved: 59/59 domains
+INFO  discovery cycle started
+INFO  subfinder started          {"domains": 2, "enumerating": 2, "reused_from_db": 0, "zone_interval": "24h0m0s", "budget": 25}
+INFO  subfinder phase complete   {"domains": 2}
+INFO  dns resolve phase done     {"scannable_ips": 59, "ignored_ips": 0, "ignored_domains": 0, "pending_proposals": 0}
+INFO  discovery cycle done       {"scannable_ips": 59, "ignored_ips": 0}
 ```
+
+Найденные поддомены по отдельности пишутся на уровне debug
+(`subfinder done` с числом `subdomains`), wildcard-зона — на уровне warn
+(`wildcard DNS detected for zone`).
 
 ## 2. Nmap port-scan + fingerprint
 
 **Что делает:**
 
-- Для каждого адреса **текущего** резолва активных доменов запускает
-  `nmap -sV -p <PORTS>`
-- Извлекает service, product, version, banner
-- Опционально: HTTP-fingerprinting (через native `net/http` Go)
-- Результаты → `port_scans` таблица + SARIF в Hub
+- Для каждого адреса **текущего** резолва активных доменов, адресов из
+  периметра Hub (или NetBox без Hub) и `DOMAINSCOPE_TARGET_IPS` запускает nmap
+  по списку портов: SYN-сканирование с `-T4`, при
+  `DOMAINSCOPE_SCANNER_SCAN_TYPE=connect` — connect-сканирование без
+  host-discovery
+- Протокол на открытом порту определяет fingerprintx — по одному запросу на
+  каждый домен, ведущий на адрес (Host и SNI); нераспознанный порт
+  записывается как `unknown`
+- На TLS-портах читает альтернативные имена сертификата и сохраняет свои
+  (под исходными зонами или резолвящиеся в уже сканированный адрес) с
+  `source=tls_san`
+- Результаты → таблица `ip_data` в БД + SARIF в Hub
 
 **Конфиг:**
 
