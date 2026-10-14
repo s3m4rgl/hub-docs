@@ -48,6 +48,7 @@ spec:
   resources:
     requests:
       storage: {{ .Values.pvc.workerStorage.size | quote }}
+{{- if .Values.postgres.enabled }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -65,3 +66,4 @@ spec:
   resources:
     requests:
       storage: {{ .Values.pvc.postgresData.size | quote }}
+{{- end }}

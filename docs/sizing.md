@@ -49,14 +49,27 @@ PostgreSQL в чарте разворачивается одним экземп�
 вынесены в values: поменять их можно только правкой шаблона. Этого хватает
 для пилота, но не для накопленных сотен тысяч находок — при переходе в
 промышленную эксплуатацию выносите базу во внешний управляемый экземпляр:
-адрес задаётся в `backend.backend.env.dbHost` и `worker.worker.env.dbHost`
-(порт, имя базы и пользователь — в соседних `dbPort`, `dbName`, `dbUser`).
 
-!!! warning "Встроенная база при этом всё равно разворачивается"
+```yaml
+hub:                        # в hub-platform; в чарте security-scan-hub — без этого уровня
+  postgres:
+    enabled: false          # встроенные Deployment, Service и том 10 Gi не создаются
+  backend:
+    backend:
+      env:
+        dbHost: pg.example.internal
+        dbPort: "6432"
+        dbName: security_hub
+        dbUser: security_hub
+secrets:
+  hubDbPassword: "<пароль>" # в security-scan-hub — secrets.dbPassword
+```
 
-    Отдельного выключателя у встроенного PostgreSQL в чарте нет: под с ним
-    поднимается, даже когда backend и worker смотрят во внешнюю базу. Учтите
-    его запрос ресурсов и том на 10 Gi в бюджете кластера.
+Worker без своего `dbHost` подключается туда же, куда backend. Строка
+подключения в Secret (`databaseUrl`, её же читает iac-scanner) и задание
+первичной настройки собираются из тех же значений. Если выключить встроенную
+базу и не задать `dbHost`, установка остановится с ошибкой, а не поднимет
+сервисы без базы.
 
 ### DomainScope
 

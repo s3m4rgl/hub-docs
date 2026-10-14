@@ -61,13 +61,13 @@ spec:
         image: {{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}
         env:
         - name: PGHOST
-          value: {{ include "chart.fullname" . }}-postgres
+          value: {{ include "chart.dbHost" . | quote }}
         - name: PGPORT
-          value: "5432"
+          value: {{ include "chart.dbPort" . | quote }}
         - name: PGUSER
-          value: {{ .Values.postgres.env.postgresUser | quote }}
+          value: {{ include "chart.dbUser" . | quote }}
         - name: PGDATABASE
-          value: {{ .Values.postgres.env.postgresDb | quote }}
+          value: {{ include "chart.dbName" . | quote }}
         - name: PGPASSWORD
           valueFrom: { secretKeyRef: { name: '{{ include "chart.secretsName" . }}', key: dbPassword } }
         - name: ADMIN_PASSWORD

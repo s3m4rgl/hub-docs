@@ -1,4 +1,4 @@
-{{- $dbHost := default (printf "%s-postgres" (include "chart.fullname" .)) .Values.backend.backend.env.dbHost -}}
+{{- $dbHost := include "chart.dbHost" . -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

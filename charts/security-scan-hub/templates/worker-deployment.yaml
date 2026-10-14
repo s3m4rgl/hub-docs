@@ -1,4 +1,4 @@
-{{- $dbHost := default (printf "%s-postgres" (include "chart.fullname" .)) .Values.worker.worker.env.dbHost -}}
+{{- $dbHost := default (include "chart.dbHost" .) .Values.worker.worker.env.dbHost -}}
 {{- $sandboxNs := default .Release.Namespace .Values.worker.worker.env.sandboxNamespace -}}
 apiVersion: apps/v1
 kind: Deployment
