@@ -6,7 +6,7 @@
 - числа — unsigned int; списки — через запятую;
 - источник истины по дефолтам — `DefaultConfig()` в `internal/pkg/configuration/config.go`.
 
-В Helm задаются через `domainscope.env.*`. Секреты (`DSN`, `*_API_TOKEN`, `*_PASSWORD`, `*_HMAC_SECRET`, `ZAP_*_JSON`) идут через `secretKeyRef`/Vault.
+В Helm задаются через `domainscope.env.*`; переменные без своего ключа в values — списком `domainscope.extraEnv`. Секреты (`DSN`, `*_API_TOKEN`, `*_PASSWORD`, `*_HMAC_SECRET`, `ZAP_*_JSON`) идут через `secretKeyRef`/Vault.
 
 ## Окружение / общее
 
@@ -21,7 +21,7 @@
 | `DOMAINSCOPE_DOMAINS` | Исходные зоны для обнаружения поддоменов. При подключённом Hub сканируются, только если их допускает периметр Hub | CSV доменов | пусто (берётся из YAML/Hub Scope API) |
 | `DOMAINSCOPE_IGNORED_DOMAINS` | Корневые зоны, всегда игнорируемые (напр. `reg.ru`) | CSV доменов | пусто |
 | `DOMAINSCOPE_TARGET_IPS` | IP для прямого сканирования. Только одиночные адреса: значение с маской (`192.0.2.0/24`) отбрасывается с предупреждением `invalid ip address, skipping` (известное ограничение, [DomainScope#8](https://gitlab.com/hub_infosec/DomainScope/-/work_items/8)) | CSV IP | пусто |
-| `DOMAINSCOPE_TARGET_PORTS` | Порты сканирования | `80,443,1000-2000` (одиночные + диапазоны) | пусто |
+| `DOMAINSCOPE_TARGET_PORTS` | Порты nmap (`-p`). Нельзя вместе с `DOMAINSCOPE_SCANNER_TOP_PORTS`: заданы оба — ошибка старта | `80,443,1000-2000` (одиночные + диапазоны) | пусто → встроенный набор `Top100Ports` (97 портов); в Helm-чарте — 21 порт из `values.yaml`. Подробно — [Порты сканирования](#порты-сканирования) |
 | `DOMAINSCOPE_FINGERPRINT_TIMEOUT` | Таймаут fingerprinting, сек | uint | `5` |
 
 ## Scanner (nmap)
@@ -42,6 +42,219 @@
   - ограниченные seccomp-профили.
 
   `connect` медленнее `syn`, но не требует повышенных привилегий. Доступно начиная с версии 0.26.
+
+### Тонкая настройка nmap (0.34)
+
+Скорость, агрессивность, таймауты и host discovery задаются без пересборки.
+Ни одна из этих переменных не обязательна: без них скан идёт как раньше —
+`-T4`, тип из `DOMAINSCOPE_SCANNER_SCAN_TYPE`, `--min-rate` из
+`DOMAINSCOPE_SCANNER_MIN_RATE`. В `config.yml` те же ключи без префикса и в
+нижнем регистре (`scanner_timing_template` и т.д.).
+
+| Переменная | nmap | Значения | По умолчанию |
+|---|---|---|---|
+| `DOMAINSCOPE_SCANNER_TOP_PORTS` | `--top-ports N` вместо `-p <TARGET_PORTS>` | `1`…`65535`, нельзя вместе с `TARGET_PORTS` | не задано |
+| `DOMAINSCOPE_SCANNER_TIMING_TEMPLATE` | `-T0`…`-T5` | `0`…`5` | `4` |
+| `DOMAINSCOPE_SCANNER_MAX_RATE` | `--max-rate`, пакетов/сек | uint, не меньше `MIN_RATE` | не задано |
+| `DOMAINSCOPE_SCANNER_MIN_PARALLELISM` | `--min-parallelism` | uint | не задано |
+| `DOMAINSCOPE_SCANNER_MAX_PARALLELISM` | `--max-parallelism` | uint, не меньше `MIN_PARALLELISM` | не задано |
+| `DOMAINSCOPE_SCANNER_HOST_TIMEOUT` | `--host-timeout` | длительность | не задано |
+| `DOMAINSCOPE_SCANNER_MAX_RTT_TIMEOUT` | `--max-rtt-timeout` | длительность | не задано |
+| `DOMAINSCOPE_SCANNER_INITIAL_RTT_TIMEOUT` | `--initial-rtt-timeout` | длительность, не больше `MAX_RTT_TIMEOUT` | не задано |
+| `DOMAINSCOPE_SCANNER_SCAN_DELAY` | `--scan-delay` | длительность | не задано |
+| `DOMAINSCOPE_SCANNER_MAX_RETRIES` | `--max-retries` | uint, `0` = без повторов | значение nmap |
+| `DOMAINSCOPE_SCANNER_SKIP_HOST_DISCOVERY` | `-Pn` | `true` \| `false` | `false` |
+| `DOMAINSCOPE_SCANNER_HOST_DISCOVERY_PROBES` | `-PS`/`-PA`/`-PU`/`-PY[порты]`, `-PE`, `-PP`, `-PM`, `-PO[протоколы]` | список через пробел | не задано |
+| `DOMAINSCOPE_SCANNER_NMAP_EXTRA_ARGS` | любые другие опции | список через пробел | не задано |
+
+- **Длительности** — в формате Go: `500ms`, `30s`, `15m`, с точностью до
+  миллисекунды. Голое число (`30`) — ошибка, а не 30 наносекунд.
+- **Списки разделяются пробелом**, а не запятой: запятая занята списками
+  портов (`-PS22,80`). В `config.yml` это обычный YAML-список.
+- **Host discovery** настраивается только в режиме `syn`. В `connect` nmap и
+  так всегда запускается с `-Pn`, поэтому `HOST_DISCOVERY_PROBES` вместе с
+  `connect` или с `SKIP_HOST_DISCOVERY` — ошибка старта.
+- **Неверное значение любой из этих переменных останавливает запуск** с именем
+  переменной в тексте ошибки — опечатка не превращается молча в дефолт.
+
+#### `DOMAINSCOPE_SCANNER_NMAP_EXTRA_ARGS` — что нельзя
+
+Произвольные аргументы добавляются в конец командной строки nmap. Значение
+опции пишется через `=` или слитно (`--exclude=10.0.0.1`, `-eeth0`): отдельные
+позиционные слова запрещены, иначе через них можно добавить цели вне скоупа.
+
+Отклоняются при старте:
+
+| Что | Почему |
+|---|---|
+| `-o*`, `-m`, `--append-output`, `--stylesheet`, `--webxml` | DomainScope читает результат из XML в stdout; вывод в файлы ломает разбор |
+| `-iL`, `-iR`, `--resume` | Цели задаёт только скоуп |
+| `-p`, `-F`, `--top-ports`, `--port-ratio` | Порты задают `DOMAINSCOPE_TARGET_PORTS` или `DOMAINSCOPE_SCANNER_TOP_PORTS`, см. [Порты сканирования](#порты-сканирования) |
+| `--datadir`, `--servicedb`, `--versiondb` | Подмена файлов данных nmap |
+| `--script*`, `-sC`, `-A` | NSE не нужен циклу, а `--script` с путём — исполнение произвольного кода с правами `CAP_NET_RAW` |
+| `-s*` кроме `-sV` | `-sU` подмешал бы UDP-порты к TCP, `-sn`/`-sL` отключают скан портов; тип скана — `SCANNER_SCAN_TYPE` |
+| `-4`, `-6`, `--privileged`, `--unprivileged` | Задаются автоматически по адресу и типу скана |
+| `-h`, `-V`, `--iflist` | nmap не сканирует и не отдаёт XML |
+| `-T`, `-P*`, rate, parallelism, таймауты, retries | Для них есть отдельные переменные выше |
+
+Проверка повторяет разбор nmap: ловятся и `-oX`, и `-oN=файл`, и сокращения
+длинных опций (`--styl`), и склеенные короткие (`-nm`). Длинную опцию с одним
+дефисом, начинающуюся с запрещённой буквы (`-ip-options`), пишите с двумя:
+`--ip-options`.
+
+Разрешены и безопасны для разбора: `-v`, `-d`, `--reason`, `--packet-trace`,
+`-sV` — их вывод уходит в stderr.
+
+## Порты сканирования
+
+Список портов задаёт только nmap-скан. Остальные сканеры, кроме OpenVAS,
+работают с тем, что nmap нашёл открытым (см. ниже), поэтому от этого списка
+зависит, что вообще увидит DomainScope.
+
+### Как задать
+
+| Способ | Ключ |
+|---|---|
+| ENV | `DOMAINSCOPE_TARGET_PORTS` |
+| YAML (`settings.yml`) | `target_ports` — список чисел |
+| Helm | `domainscope.env.targetPorts` → `DOMAINSCOPE_TARGET_PORTS` |
+
+Формат ENV (`ParsePortsSpec`):
+
+- одиночные порты и диапазоны `lo-hi` через запятую: `22,80,443,8000-8100`;
+- пробелы вокруг элементов и внутри диапазона допустимы (`80 , 443`, `8000 - 8100`);
+- дубли убираются, порядок не важен — порты сортируются;
+- порт `0` парсер принимает, но перед запуском nmap он отбрасывается.
+
+В YAML `target_ports` — список чисел (`[22, 80, 443]`), диапазонов там нет:
+строка `"1000-2000"` или число больше 65535 — ошибка разбора YAML при старте.
+
+!!! warning "Ошибки в DOMAINSCOPE_TARGET_PORTS не останавливают запуск"
+
+    Неразобранные элементы молча пропускаются: число больше 65535, не число,
+    перевёрнутый диапазон (`2000-1000`). Из `80,abc,443` получится `80,443`.
+    Если не разобралось ничего, переменная игнорируется целиком и остаются
+    порты из YAML, а если и их нет — встроенный набор. Сообщения в журнале нет.
+
+    `DOMAINSCOPE_TARGET_PORTS=0` — частный случай: список состоит из одного
+    отброшенного порта, и nmap не запускается вовсе. Каждый адрес считается
+    адресом без открытых портов, а находки по его портам закрываются.
+
+### Альтернатива: `DOMAINSCOPE_SCANNER_TOP_PORTS` (0.34)
+
+`DOMAINSCOPE_SCANNER_TOP_PORTS=N` (YAML `scanner_top_ports`) передаёт nmap
+`--top-ports N` вместо `-p <список>`: это N самых частых портов по базе
+`nmap-services` того nmap, что лежит в образе. Допустимо `1`…`65535`. Больше,
+чем есть в базе (в nmap 7.99 — 8387 TCP), nmap всё равно не возьмёт.
+
+Взаимоисключение с `TARGET_PORTS` строгое: если заданы оба, в том числе один в
+YAML, а другой в ENV, запуск останавливается с ошибкой. С `TOP_PORTS`
+встроенный набор не подставляется.
+
+### Что будет, если не указывать
+
+| Способ установки | Что сканируется |
+|---|---|
+| Бинарь / Docker без `TARGET_PORTS` и `target_ports` | Встроенный `Top100Ports` |
+| `docker-compose.yml` из этого репозитория | `TARGET_PORTS` в нём не задан → встроенный `Top100Ports` |
+| `.env.example` DomainScope | Строка `DOMAINSCOPE_TARGET_PORTS` закомментирована → встроенный `Top100Ports` |
+| `config-example.yml` DomainScope, скопированный как есть | `target_ports: [22, 80, 443, 3306, 5432]` — пять портов |
+| Helm-чарт `charts/domainscope` | 21 порт из `values.yaml`, а **не** Top100 |
+
+В Helm-чарте `targetPorts` по умолчанию:
+
+```
+21,22,25,80,110,143,389,443,445,993,995,1433,1521,3306,3389,5432,5900,6379,8080,8443,27017
+```
+
+Шаблон передаёт `DOMAINSCOPE_TARGET_PORTS` всегда. Поэтому «не указывать
+`targetPorts`» в Helm значит «сканировать эти 21 порт». Чтобы получить
+встроенный набор, передайте пустую строку: `--set
+domainscope.env.targetPorts=""`. Пустую переменную DomainScope считает
+незаданной и подставляет `Top100Ports`.
+
+**Встроенный `Top100Ports`** (`internal/pkg/agent/agent.go`) — свой
+фиксированный список из 97 портов, а не вызов nmap `--top-ports 100`. Это
+top-100 TCP из nmap-services (сверено с nmap 7.99) без портов 7, 9 и 13. Список
+зашит в код и с обновлением nmap не меняется:
+
+```
+21,22,23,25,26,37,53,79,80,81,88,106,110,111,113,119,135,139,143,144,179,199,
+389,427,443,444,445,465,513,514,515,543,544,548,554,587,631,646,873,990,993,995,
+1025-1029,1110,1433,1720,1723,1755,1900,2000,2001,2049,2121,2717,3000,3128,3306,
+3389,3986,4899,5000,5009,5051,5060,5101,5190,5357,5432,5631,5666,5800,5900,6000,
+6001,6646,7070,8000,8008,8009,8080,8081,8443,8888,9100,9999,10000,32768,
+49152-49157
+```
+
+!!! note "Тонкая настройка nmap в Helm — через `extraEnv`"
+
+    Из `domainscope.env.*` шаблон передаёт только часть переменных, для
+    nmap — `targetPorts` и `scanType`. Остальные `DOMAINSCOPE_SCANNER_*`
+    (включая `WORKERS`, `MIN_RATE`, `TOP_PORTS`) и `DOMAINSCOPE_OPENVAS_PORT_LIST`
+    задаются списком `domainscope.extraEnv` (в `hub-platform` —
+    `domainscope.domainscope.extraEnv`). Он идёт последним и перекрывает
+    совпадающие имена:
+
+    ```yaml
+    domainscope:
+      extraEnv:
+      - name: DOMAINSCOPE_SCANNER_TIMING_TEMPLATE
+        value: "3"
+      - name: DOMAINSCOPE_SCANNER_MAX_RATE
+        value: "200"
+    ```
+
+### Как порты влияют на другие сканеры
+
+| Сканер | Какие порты берёт |
+|---|---|
+| Nuclei | Активные находки порт-скана с протоколом `http` или `https` по fingerprint. Исключение — `DOMAINSCOPE_NUCLEI_TARGET_FILE`: тогда цели берутся из файла |
+| ZAP | Те же активные находки `http`/`https` |
+| TLSX | Порты, у которых fingerprint определил TLS-протокол: `https`, `imaps`, `pop3s`, `smtps`, `ldaps` |
+| OpenVAS | Свой port list в gvmd, от `TARGET_PORTS` не зависит: по умолчанию `All TCP ports`; с DomainScope!81 — `DOMAINSCOPE_OPENVAS_PORT_LIST` (UUID или имя существующего листа; не найден — ошибка цикла OpenVAS) |
+
+Вывод: порт вне `TARGET_PORTS` (или вне `TOP_PORTS`) nmap не проверит, и его не
+увидят ни Nuclei, ни ZAP, ни TLSX. Веб-сервис на `9443` при дефолтном наборе
+чарта не будет просканирован ничем, кроме OpenVAS.
+
+Сужение списка закрывает находки: после скана у адреса активными остаются только
+порты, которые нашлись в этом скане. Находка по порту, исключённому из списка,
+закроется в следующем цикле как пропавшая, хотя сервис мог и не измениться.
+
+### Почему не через `NMAP_EXTRA_ARGS`
+
+`-p`, `-F`, `--top-ports` и `--port-ratio` в
+[`DOMAINSCOPE_SCANNER_NMAP_EXTRA_ARGS`](#domainscope_scanner_nmap_extra_args--что-нельзя)
+отклоняются при старте. DomainScope сам передаёт nmap `-p <список>`, а nmap:
+
+- на второй `-p` завершается с ошибкой `Only 1 -p option allowed`;
+- `--top-ports` вместе с `-p` молча сужает список до пересечения.
+
+Такая опция в extra args либо роняет каждый скан, либо незаметно меняет набор
+портов. Для `--top-ports` есть отдельная переменная `SCANNER_TOP_PORTS`.
+
+### Типовые рецепты
+
+```ini
+# Минимальный веб-набор: быстро, только то, что пойдёт в Nuclei/ZAP/TLSX
+DOMAINSCOPE_TARGET_PORTS=80,443,8000,8080,8443,8888
+
+# 1000 самых частых портов по nmap-services (0.34)
+DOMAINSCOPE_SCANNER_TOP_PORTS=1000
+
+# Полный TCP
+DOMAINSCOPE_TARGET_PORTS=1-65535
+```
+
+Время скана растёт примерно пропорционально числу портов. `--min-rate`
+(`DOMAINSCOPE_SCANNER_MIN_RATE`, по умолчанию 500 пакетов/с) — нижняя граница
+скорости одного процесса nmap. Полный TCP на одном адресе — 65535 проб, то есть
+порядка двух минут и больше при повторах. Скан идёт в
+`DOMAINSCOPE_SCANNER_WORKERS` (по умолчанию 20) параллельных процессах,
+суммарный поток кратно выше: 20 × 500 = 10 000 пакетов/с. Проверьте, что цикл
+укладывается в `DOMAINSCOPE_TIME_LOOP_PORTSCAN`, а сеть и провайдер выдерживают
+такой поток. Для мягкого режима есть `SCANNER_MAX_RATE` и `SCANNER_TIMING_TEMPLATE`.
 
 ## Time-loops (интервалы циклов, сек)
 
