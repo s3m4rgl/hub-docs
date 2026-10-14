@@ -51,7 +51,7 @@ cd hub-platform
 ### Предусловия
 
 - Linux VM (Ubuntu 22.04+, Debian 12+, RHEL 9+, Astra Linux 1.7)
-- 8 vCPU / 16 GB RAM / 60 GB disk (с OpenVAS); 4/8/30 без OpenVAS
+- 4 vCPU / 8 GB RAM / 60 GB disk без OpenVAS; 6 / 16 / 100 с OpenVAS (см. [Расчёт ресурсов](sizing.md))
 - Root-доступ
 - DNS-запись `hub.example.com` → IP вашей VM (для Let's Encrypt и UI)
 - Outbound HTTPS к registry с образами
@@ -124,9 +124,11 @@ securityScanHub:
 
   pvc:
     postgresData:
-      size: 100Gi # рассчитайте на год вперёд
-    backendStorage: 10Gi
-    workerStorage: 5Gi
+      size: 30Gi # ~1 млн находок; расчёт — sizing.md#база-данных-hub
+    backendStorage:
+      size: 10Gi # SARIF за срок хранения (7 дней) с запасом
+    workerStorage:
+      size: 2Gi # логи worker
 
   secrets:
     existingSecretName: hub-secrets # см. ниже

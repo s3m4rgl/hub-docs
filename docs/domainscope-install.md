@@ -9,8 +9,10 @@ DomainScope ставится отдельно от Hub. Поставка — г�
 ### Предусловия
 
 - Docker Engine 24+, Docker Compose v2.20+
-- 4 vCPU / 8 GB RAM минимум (с OpenVAS: 6+12)
-- 50 GB disk (Nuclei templates, OpenVAS feeds, БД)
+- 4.5 vCPU / 4.5 GB RAM (лимиты DomainScope и его базы; запросы — 0.6 ядра и
+  0.7 GB); с OpenVAS — ещё 2 vCPU и 8 GB
+- 20 GB диска (база DomainScope 5 GB, логи, образ); с OpenVAS — ещё 40 GB под
+  базы описаний уязвимостей
 - Доступ к Docker registry с образом DomainScope
 - Outbound HTTPS (для nuclei-templates и upload в Hub)
 
@@ -136,7 +138,8 @@ domainscope:
 
   postgres:
     enabled: true
-    storage: 30Gi
+    storage:
+      size: 5Gi # умолчание чарта
 
   scanners:
     nuclei:
