@@ -24,6 +24,10 @@ DomainScope содержит шесть независимых сканеров.
 - Новые домены добавляются в БД с `source=subfinder`
 - Опционально: тянет дополнительные seed-домены из Hub (`scope_entry`) и NetBox (`netbox_dns`)
 
+Что именно перечисляется, когда поддомен сканируется сразу, а когда уходит
+предложением в Hub, и чего discovery не умеет — на странице
+[Расширение периметра](domainscope-scope-discovery.md).
+
 **Конфиг:**
 
 ```ini
@@ -342,5 +346,6 @@ LIMIT 20;
 
 ## Связанные документы
 
+- [Расширение периметра: обнаружение доменов и адресов](domainscope-scope-discovery.md) — как находятся и предлагаются новые домены
 - [Синхронизация с NetBox](domainscope-netbox.md) — NetBox sync
 - [Происхождение записей периметра](domainscope-trails.md) — discovery trails

@@ -86,5 +86,6 @@ IP-адреса (`ip_addresses.source`):
 
 ## Связанные документы
 
+- [Расширение периметра: обнаружение доменов и адресов](domainscope-scope-discovery.md) — как находятся и предлагаются новые домены
 - [Управление сканерами DomainScope](domainscope-scanners.md) — управление сканерами и IP_SCOPE фильтр
 - [Синхронизация с NetBox](domainscope-netbox.md) — sync с NetBox

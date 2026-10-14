@@ -226,5 +226,6 @@ INFO Discovery cycle finished
 
 ## Связанные документы
 
+- [Расширение периметра: обнаружение доменов и адресов](domainscope-scope-discovery.md) — как находятся и предлагаются новые домены
 - [Интеграция с NetBox](integration-netbox.md) — NetBox sync со стороны Hub
 - [Происхождение записей периметра](domainscope-trails.md) — provenance в DomainScope

@@ -196,6 +196,7 @@ DomainScope экспонирует HTTP эндпоинты (если `DOMAINSCOP
 
 ## Связанные документы
 
+- [Расширение периметра: обнаружение доменов и адресов](domainscope-scope-discovery.md) — как находятся и предлагаются новые домены
 - [Установка DomainScope](domainscope-install.md) — установка
 - [Управление сканерами DomainScope](domainscope-scanners.md) — управление сканерами
 - [Синхронизация с NetBox](domainscope-netbox.md) — NetBox sync
