@@ -14,10 +14,11 @@ kubectl -n hub logs deploy/hub-backend
 
 | Признак в логах                                         | Причина                       | Fix                                                    |
 | ------------------------------------------------------- | ----------------------------- | ------------------------------------------------------ |
-| `JWT_SECRET not set`                                    | Переменная не задана / пустая | Задать в `.env` или helm values                        |
+| `Required environment variable JWT_SECRET is not set`  | Переменная не задана / пустая (проверяется при `APP_ENV=production`) | Задать в `.env` или helm values |
 | `dial tcp ...:5432: connect: connection refused`        | БД недоступна                 | Проверить postgres-контейнер, `DB_HOST`                |
 | `password authentication failed for user "securityhub"` | Неверный `DB_PASSWORD`        | Сверить с тем, что задано в postgres                   |
-| `goose: failed to apply migration`                      | Конфликт миграций             | См. логи goose; обычно — расхождение версий backend/БД |
+| `failed to run migrations` / `apply migrations in ...`  | Миграция не применилась       | См. текст ошибки в той же строке; обычно — расхождение версий backend/БД |
+| `timed out waiting for migration advisory lock`         | Блокировку миграций держит другая реплика дольше `MIGRATION_LOCK_WAIT_SECONDS` | Дождаться её миграции или поднять `MIGRATION_LOCK_WAIT_SECONDS` |
 | `panic: ...`                                            | Баг                           | Reissue в трекер; приложите stacktrace                 |
 
 ### Frontend 502 Bad Gateway
@@ -26,10 +27,10 @@ kubectl -n hub logs deploy/hub-backend
 | ---------------------------------------- | ----------------------------------------------------------- |
 | Backend стартанул?                       | `docker compose ps backend` — `Up`?                         |
 | Backend отвечает на 8082?                | `curl http://localhost:8082/version`                        |
-| Frontend nginx видит backend?            | Проверить `REACT_APP_API_URL` build-arg + entrypoint inject |
+| Frontend nginx видит backend?            | Проверить переменную `REACT_APP_API_URL` контейнера frontend — её подставляет entrypoint при старте |
 | Reverse-proxy (nginx/traefik) корректен? | `nginx -t`, логи `/var/log/nginx/error.log`                 |
 
-### "Версия: dev" в UI
+### `frontend X.Y-dev` в подвале UI
 
 Образ собран без version build-args (баг билда на стороне поставщика). Попросите перевыпуск образа.
 
@@ -41,7 +42,7 @@ docker compose exec postgres psql -U securityhub securityhub -c \
 ```
 
 - Если таблицы нет — goose не запустился. Логи backend → искать `goose`
-- Если есть, но новые миграции не накатились — проверьте, что в `backend/migrations/` есть новые файлы
+- Если есть, но новые миграции не накатились — проверьте, что backend запущен из нового образа: миграции лежат в образе в `/app/migrations`; если их там нет, в журнале будет `No migration files found in any directory`
 - Если зависло — посмотрите `SELECT * FROM pg_stat_activity WHERE state='active'` — возможно, миграция длинная
 
 ### Loading forever в UI после логина
@@ -49,7 +50,7 @@ docker compose exec postgres psql -U securityhub securityhub -c \
 | Причина                                         | Fix                                                                               |
 | ----------------------------------------------- | --------------------------------------------------------------------------------- |
 | Frontend не может загрузить чанки (вылетел 404) | Проверить, что вся статика в `frontend-dist/` доступна (`curl -I`)                |
-| API возвращает 401 на `/api/v1/users/me`        | JWT истёк или подпись не проверяется. Сверьте `JWT_SECRET` между backend и worker |
+| API возвращает 401 на `/api/v1/users/me`        | JWT истёк или подпись не проверяется. Сверьте `JWT_SECRET` между репликами backend |
 | CORS error                                      | `ALLOWED_ORIGINS` не включает frontend-domain                                     |
 
 ## Auth / Keycloak
@@ -60,8 +61,8 @@ docker compose exec postgres psql -U securityhub securityhub -c \
 | --------------------------------------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
 | URL: `/auth/keycloak/callback?error=invalid_client` | `KEYCLOAK_CLIENT_SECRET` неверный                                                | Сверить в Keycloak → Clients → Credentials                           |
 | `404` на token exchange                             | `KEYCLOAK_TOKEN_URL` указан неправильно (или auto-discovery вернул internal URL) | Задать `KEYCLOAK_TOKEN_URL` явно (HTTPS!)                            |
-| `JWT signature invalid`                             | `KEYCLOAK_JWKS_URL` устарел или указывает не на тот realm                        | Очистить кэш JWKS (рестарт backend); задать `KEYCLOAK_JWKS_URL` явно |
-| `Audience mismatch`                                 | В `KC_AUDIENCES` нет нужного значения                                            | Добавить или настроить Audience mapper в Keycloak                    |
+| `parse id_token: ... token signature is invalid`    | `KEYCLOAK_JWKS_URL` устарел или указывает не на тот realm                        | Очистить кэш JWKS (рестарт backend); задать `KEYCLOAK_JWKS_URL` явно |
+| `audience mismatch`                                 | В `aud` (или `azp`) id_token нет идентификатора клиента `KEYCLOAK_CLIENT_ID`      | Настроить Audience mapper в Keycloak или исправить `KEYCLOAK_CLIENT_ID` |
 
 ### Transparent SSO: внешний JWT отклоняется
 
@@ -116,11 +117,12 @@ curl -H "Authorization: Bearer $TOKEN" https://hub.example.com/api/v1/projects/<
 Постоянный отказ такого рода завершает задание с объяснением, а не остаётся в
 очереди навсегда.
 
-### Заведение отвечает тихим `404`
+### Заведение отклоняется из-за `base_url`
 
-В `base_url` дописан путь API. Плагин добавляет `/rest/api/2/issue` сам;
-половина пути в настройках плюс половина в коде даёт 404, неотличимый от
-«система не приняла задачу».
+В `base_url` дописан путь API. Плагин добавляет `/rest/api/2/issue` сам,
+поэтому адрес с `/rest/api` он отклоняет с ошибкой `base_url должен быть БЕЗ
+пути API: /rest/api/2/issue дописывает плагин`. Укажите только базовый адрес
+Jira.
 
 ### Переход по статусу не выполняется
 
@@ -131,8 +133,12 @@ curl -H "Authorization: Bearer $TOKEN" https://hub.example.com/api/v1/projects/<
 ### Закрытие задачи не закрывает находку
 
 ```bash
-docker compose logs worker | grep ticket_status_poll
+docker compose logs backend worker | grep ticket_status_poll
 ```
+
+Задания провайдеров задач выполняет backend: в worker среды исполнения
+плагинов нет, и попавшее туда задание завершается ошибкой
+`платформа плагинов не сконфигурирована`, после чего River его повторяет.
 
 | Симптом | Что проверить |
 | --- | --- |
@@ -157,12 +163,18 @@ docker compose logs worker | grep ticket_status_poll
 
 ### Автоматически закрылось лишнее
 
-Сначала проверьте, что все три условия действительно были выполнены — без
+Сначала проверьте, что все условия действительно были выполнены — без
 любого из них закрытие не должно происходить:
 
 1. `FEATURE_AUTO_VERIFY_FIXES=true` — на всей установке;
 2. признак `auto_verify_fixes_enabled` — в настройках проекта;
-3. `verify_fixes=true` — в параметрах конкретной загрузки.
+3. режим проверки проекта `auto_verify_mode=point_verify` — в режиме `diff`
+   Hub не закрывает ничего;
+4. `verify_fixes=true` — в параметрах конкретной загрузки.
+
+Закрытие в режиме `point_verify` происходит только по вердикту «отсутствует»
+от точечной проверки DomainScope (`/api/v1/probe`), а не по отсутствию
+находки в отчёте.
 
 Затем проверьте кворум: закрытие должно происходить только после
 `AUTO_VERIFY_ABSENT_THRESHOLD` последовательных проверок, давших
@@ -200,10 +212,10 @@ ORDER BY updated_at;
 # Глубина очереди > 0? Worker крутит?
 
 # 2. Логи
-docker compose logs worker | grep -i notif
+docker compose logs backend worker | grep -i notif
 
 # 3. dry-run проверка
-# В env: NOTIFICATIONS_DRY_RUN=true → перезапустить worker
+# В env: NOTIFICATIONS_DRY_RUN=true → перезапустить backend и worker
 # Логи должны показать сообщение, которое было бы отправлено
 ```
 
@@ -211,10 +223,10 @@ docker compose logs worker | grep -i notif
 | --- | --- |
 | Ни по одному каналу ничего нет | Плагин канала не установлен: с 0.33 каналов в ядре нет |
 | В каталоге плагин есть, установка недоступна | Источнику не разрешено исполнение нативных плагинов |
-| В журнале «плагин выключен — находки не доставлены» | Плагин установлен, но выключен администратором |
-| В журнале «канал включён, но обязательные поля не заполнены» | Нет `chat_id`, `recipients` или секрета канала |
+| В журнале `notification channel plugin disabled — findings not delivered` | Плагин установлен, но выключен администратором |
+| В журнале `канал включён, но обязательные поля не заполнены — уведомления не доставляются` | Нет `chat_id`, `recipients` или секрета канала |
 | События идут, доставки нет | Критичность ниже порога или канал не подписан на этот тип события |
-| Очередь растёт, не уменьшается | Worker не запущен (`docker compose ps worker`) |
+| Очередь растёт, не уменьшается | Проверьте, что запущены backend и worker (`docker compose ps`): доставку через канальные плагины выполняет только backend |
 | Telegram: 400 Bad Request | Формат идентификатора чата: для каналов `-100…`, для групп — отрицательный |
 | Telegram: chat not found | Бот не добавлен в чат |
 | Mattermost: доставка отклонена | Не заполнен `mattermost_base_url` в настройках установки плагина |
@@ -258,6 +270,13 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
 
 ### `413 Payload Too Large`
 
+`413` отвечает и сам Hub — если файл больше `MAX_UPLOAD_SIZE_MB` (по
+умолчанию 500 МБ) или больше предела разбора формата (SARIF — 50 МиБ, без
+явного `format` действует наибольший из пределов); тогда в теле ответа — ключ
+`report.file_too_large`, `report.file_too_large_for_format` или
+`report.file_too_large_for_parsing`. Если тела Hub в ответе нет, ограничивает
+обратный прокси:
+
 ```nginx
 # nginx
 client_max_body_size 200M;
@@ -268,33 +287,36 @@ client_max_body_size 200M;
 nginx.ingress.kubernetes.io/proxy-body-size: 200m
 ```
 
-### `422 Unprocessable Entity: limit exceeded`
+### Из большого отчёта загрузились не все находки
 
-SARIF превысил один из hard-лимитов (см. [Загрузка отчётов внешних сканеров](integration-sarif.md)):
+SARIF превысил один из пределов разбора (см. [Загрузка отчётов внешних сканеров](integration-sarif.md)):
+не больше 100 runs в отчёте, 100 000 results в одном run и 1 000 000 results
+на отчёт. Лишнее отбрасывается с предупреждением в журнале — `sarif: runs truncated`
+или `sarif: results truncated`.
 
 - Разбейте отчёт на несколько (несколько runs в разных файлах)
 - Уменьшите количество results (фильтр на стороне сканера)
 
 ### Findings не дедуплицируются
 
-Между прогонами сканера `rule_id` и `location.physicalLocation.artifactLocation.uri` должны быть стабильны. Если сканер генерит уникальные ID каждый раз — находка'и будут размножаться.
+Между прогонами сканера `rule_id` и местоположение (`location.physicalLocation.artifactLocation.uri`, номера строк и первые 100 символов фрагмента кода) должны быть стабильны. Если сканер генерирует уникальные идентификаторы каждый раз — находки будут размножаться. Правила тождества — в [Жизненном цикле находки](findings.md#дедупликация).
 
-Проверка dedup_hash:
+Проверка:
 
 ```sql
-SELECT rule_id, location, COUNT(*)
+SELECT rule_id, file_path, COUNT(*)
 FROM findings
-WHERE product_id = '<uuid>'
-GROUP BY rule_id, location
+WHERE product_id = '<uuid>' AND deleted_at IS NULL
+GROUP BY rule_id, file_path
 HAVING COUNT(*) > 5
 ORDER BY COUNT(*) DESC;
 ```
 
-### Severity всегда INFO
+### Severity всегда LOW или INFO
 
-Сканер не выставляет `level` / `properties.severity` — выставьте поле в SARIF на стороне сканера (см. [Загрузка отчётов внешних сканеров](integration-sarif.md)).
+Сканер не выставляет `properties.severity` / `level` и у правила нет уровня по умолчанию — тогда критичность становится `LOW`; уровень `note` и нераспознанные значения дают `INFO`. Выставьте поле в SARIF на стороне сканера (см. [Загрузка отчётов внешних сканеров](integration-sarif.md)).
 
-### `500 Internal Server Error — Failed to save file` при upload
+### `500 Internal Server Error — Failed to save file` («Не удалось сохранить файл») при upload
 
 В отличие от 404 (misconfig эндпоинт), 500 «Failed to save file» означает, что
 запрос **дошёл** до Hub, но backend не смог записать файл отчёта на диск:
@@ -363,7 +385,7 @@ DomainScope не смог получить scope из Hub Scope API и (безо
 
 ```bash
 kubectl -n <ns> logs deploy/<rel>-domainscope-domainscope -c domainscope | grep -i scope
-# scope_unavail должно стать 0 после готовности backend
+# после готовности backend сообщения «hub scope unavailable» должны прекратиться
 ```
 
 ### Backend/worker в CrashLoop в первые минуты
@@ -454,7 +476,7 @@ Init-контейнер идемпотентен: при рестарте он �
 - Backend имеет `LLM_WORKERS=0`? (должен)
 - Worker имеет `LLM_WORKERS > 0`? (должен)
 - `LLM_API_KEY` и `LLM_BASE_URL` заданы в worker?
-- Проверьте логи worker по записям про queue `llm_triage` — глубина > 0, есть failed jobs?
+- Проверьте логи worker по записям про очередь `llm_analysis` — глубина > 0, есть failed jobs?
 
 ### `429 Too Many Requests`
 
@@ -462,8 +484,10 @@ Init-контейнер идемпотентен: при рестарте он �
 
 ### Sandbox не запускается
 
+В журнале worker:
+
 ```
-ERROR sandbox failed: image not found
+Sandbox verification failed, returning uncertain verdict
 ```
 
 Проверьте:
@@ -497,15 +521,15 @@ docker compose -f /opt/domainscope/docker/docker-compose.yml logs domain-scope |
 
 | Признак                            | Fix                                                                   |
 | ---------------------------------- | --------------------------------------------------------------------- |
-| `nuclei-templates not found`       | `nuclei-templates-init` контейнер должен отработать. Проверьте volume |
+| `nuclei templates not found at ...` | `nuclei-templates-init` контейнер должен отработать. Проверьте volume |
 | `DOMAINSCOPE_NUCLEI_ENABLED=false` | Поставьте `true` и перезапустите                                      |
-| Cycle не стартует                  | Проверьте, что в БД есть HTTP-targets (`port_scans` с port 80/443)    |
+| Cycle не стартует                  | Нет целей: они строятся из активных находок портскана с протоколом `http`/`https` |
 
 ### OpenVAS не подключается
 
-- `DOMAINSCOPE_OPENVAS_HOST` доступен из DomainScope контейнера? `docker compose exec domain-scope nc -zv $DOMAINSCOPE_OPENVAS_HOST 9390`
+- `DOMAINSCOPE_OPENVAS_HOST` доступен из DomainScope контейнера? `docker compose exec domain-scope nc -zv $DOMAINSCOPE_OPENVAS_HOST 9390` (порт gsad, `DOMAINSCOPE_OPENVAS_PORT`, по умолчанию 9390)
 - Креды правильные? Логин в OpenVAS UI работает?
-- Feed init завершился? OpenVAS первые 10-30 минут после старта качает CVE-фиды и не отвечает на GMP
+- Feed init завершился? OpenVAS первые 10-30 минут после старта качает CVE-фиды и не отвечает
 
 ### SARIF не приходит в Hub
 
@@ -515,9 +539,9 @@ docker compose -f /opt/domainscope/docker/docker-compose.yml logs domain-scope |
 
 | Признак                       | Fix                                                                     |
 | ----------------------------- | ----------------------------------------------------------------------- |
-| `401 Unauthorized`            | `DOMAINSCOPE_HUB_API_TOKEN` неверный или истёк                          |
+| `401 Unauthorized`            | `DOMAINSCOPE_SARIF_API_TOKEN` неверный или истёк                        |
 | `403 Forbidden`               | У Service Account нет права `upload_report` на продукт или на его проект |
-| `connection refused`          | `DOMAINSCOPE_HUB_API_ENDPOINT` не доступен. Проверьте сетевую связность |
+| `connection refused`          | `DOMAINSCOPE_SARIF_API_ENDPOINT` недоступен. Проверьте сетевую связность |
 | Cycle вообще не делает upload | `DOMAINSCOPE_SARIF_AUTO_UPLOAD=true`?                                   |
 
 ### Scope proposals не появляются
@@ -626,8 +650,8 @@ EMAIL_NOTIFICATION_WORKERS=10
 ```bash
 # 1. Версии
 curl https://hub.example.com/version
-# DomainScope:
-docker compose exec domain-scope domain-scope --version
+# DomainScope — версия в стартовой записи журнала:
+docker compose logs domain-scope | grep "domain-scope starting"
 
 # 2. Конфиг (без секретов!)
 docker compose config | grep -v PASSWORD | grep -v SECRET | grep -v TOKEN

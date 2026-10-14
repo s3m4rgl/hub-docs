@@ -39,13 +39,13 @@
 
 == ⚠ OpenVAS feed initialization ==
 
-  Two post-install Jobs are downloading the VT and Notus feeds RIGHT NOW.
-  Initial sync downloads ~5 GB and takes 1–3 hours. The scanner WILL NOT find
-  vulnerabilities until those feeds finish.
+  Init containers of the OpenVAS pod (vt-init, notus-init, scap-init, ...)
+  copy the feeds (~5 GB of images) into the volumes, then gvmd imports them.
+  The scanner WILL NOT find vulnerabilities until gvmd finishes the import.
 
   Watch:
-    kubectl -n {{ .Release.Namespace }} logs -f -l app=openvas-feed-vt-init
-    kubectl -n {{ .Release.Namespace }} logs -f -l app=openvas-feed-notus-init
+    kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/component=openvas -w
+    kubectl -n {{ .Release.Namespace }} logs -f deploy/{{ .Release.Name }}-openvas -c gvmd
 {{- end }}
 
 {{- if not .Values.wireguard.enabled }}

@@ -88,7 +88,7 @@ INFO  discovery cycle done       {"scannable_ips": 59, "ignored_ips": 0}
 - На TLS-портах читает альтернативные имена сертификата и сохраняет свои
   (под исходными зонами или резолвящиеся в уже сканированный адрес) с
   `source=tls_san`
-- Результаты → таблица `ip_data` в БД + SARIF в Hub
+- Результаты → таблицы `ip_data` и `findings` в БД + SARIF в Hub
 
 **Конфиг:**
 
@@ -97,7 +97,7 @@ DOMAINSCOPE_TIME_LOOP_PORTSCAN=7200          # каждые 2 часа
 DOMAINSCOPE_TARGET_PORTS=22,80,443,3306,5432,8080,8443    # CSV, диапазоны 1000-2000
 DOMAINSCOPE_SCANNER_WORKERS=20               # параллельные горутины (default: 20)
 DOMAINSCOPE_SCANNER_MIN_RATE=500             # nmap --min-rate (0 = выключено)
-DOMAINSCOPE_FINGERPRINT_TIMEOUT=10           # секунды на HTTP-fingerprint
+DOMAINSCOPE_FINGERPRINT_TIMEOUT=10           # секунды на fingerprint (в образе — 10, дефолт кода — 5)
 ```
 
 !!! note "Цели берутся из текущего резолва, а не из истории (0.32)"
@@ -122,7 +122,7 @@ DOMAINSCOPE_FINGERPRINT_TIMEOUT=10           # секунды на HTTP-fingerpr
 - `SCANNER_WORKERS=20` — норма для 1k IP при базовом наборе портов
 - `MIN_RATE=500` — агрессивный скан; уменьшите до `200` если провайдер шумит на abuse-traffic
 - `MIN_RATE=0` — режим по умолчанию nmap (адаптивный)
-- Мягче к чувствительным сетям: `SCANNER_TIMING_TEMPLATE=3`, `SCANNER_MAX_RATE=100`, `SCANNER_SCAN_DELAY=10ms`
+- Мягче к чувствительным сетям: `SCANNER_TIMING_TEMPLATE=3`, `SCANNER_MIN_RATE=50` + `SCANNER_MAX_RATE=100`, `SCANNER_SCAN_DELAY=10ms` (`MAX_RATE` меньше `MIN_RATE` — ошибка старта, а `MIN_RATE` по умолчанию 500)
 - Хосты, не отвечающие на ping, но с открытыми портами: `SCANNER_SKIP_HOST_DISCOVERY=true`
 - Медленный канал: `SCANNER_MAX_RTT_TIMEOUT=2s`, `SCANNER_HOST_TIMEOUT=15m`
 
@@ -135,11 +135,7 @@ ZAP и TLSX — в разделе [Порты сканирования](env-doma
 
 **Безопасность:**
 
-Nmap по умолчанию делает SYN-scan (требует raw sockets → CAP_NET_RAW). В docker-режиме DomainScope получает capability автоматически. В bare-metal:
-
-```bash
-sudo setcap cap_net_raw+ep /usr/local/bin/domain-scope
-```
+Nmap по умолчанию делает SYN-scan (требует raw sockets → CAP_NET_RAW). В Docker-образе процесс работает от root, а `NET_RAW` входит в набор capability Docker по умолчанию. Вне контейнера запускайте DomainScope от root либо переключитесь на `DOMAINSCOPE_SCANNER_SCAN_TYPE=connect`: nmap запускается отдельным процессом с `-sS` без `--privileged` (через `DOMAINSCOPE_SCANNER_NMAP_EXTRA_ARGS` её тоже не передать), поэтому `setcap` на бинарь DomainScope не помогает.
 
 ## 3. Nuclei HTTP scanner
 
@@ -147,7 +143,7 @@ sudo setcap cap_net_raw+ep /usr/local/bin/domain-scope
 
 - Берёт порты, которые nmap нашёл открытыми и fingerprint определил как HTTP/HTTPS (номер порта значения не имеет; порт вне `TARGET_PORTS` сюда не попадёт)
 - Прогоняет встроенный nuclei с подключёнными templates
-- Каждое срабатывание (info/low/medium/high/critical) → SARIF находка
+- Запускает только шаблоны уровней из YAML `nuclei.severity` (по умолчанию `medium`, `high`, `critical`; через ENV не задаётся); срабатывание → SARIF находка
 
 **Включение:**
 
@@ -162,7 +158,7 @@ DOMAINSCOPE_TIME_LOOP_NUCLEI=3600            # каждый час
 
 **Templates:**
 
-Контейнер `nuclei-templates-init` загружает templates в общий volume при первом старте и обновляет при последующих запусках. Для air-gapped окружений путь к templates можно переопределить переменной `DOMAINSCOPE_NUCLEI_TEMPLATES_PATH` (например, монтируйте локальный набор как volume).
+Контейнер `nuclei-templates-init` загружает templates в общий volume при первом старте и обновляет при последующих запусках. Для air-gapped окружений смонтируйте локальный набор как volume и укажите пути в `DOMAINSCOPE_NUCLEI_TEMPLATES_PATHS`: по умолчанию заданы семь поддиректорий `/app/nuclei-templates/http/*`, и пока они заданы, `DOMAINSCOPE_NUCLEI_TEMPLATES_PATH` не действует.
 
 **Override SARIF для nuclei:**
 
@@ -194,13 +190,17 @@ DOMAINSCOPE_OPENVAS_SCAN_CONFIG_ID=          # пусто = Full and fast
 DOMAINSCOPE_TIME_LOOP_OPENVAS=86400          # каждые 24 часа
 ```
 
-**Scan configurations** (предустановленные в OpenVAS):
+**Scan configurations:**
 
-- `daba56c8-73ec-11df-a475-002264764cea` — **Full and fast** (default, рекомендуется)
-- `698f691e-7489-11df-9d8c-002264764cea` — Full and very deep (медленнее, ловит больше)
-- `bbca7412-a950-11e3-9109-406186ea4fc5` — System Discovery
+При пустом `DOMAINSCOPE_OPENVAS_SCAN_CONFIG_ID` DomainScope ищет конфигурацию
+**Full and fast** по имени, а если не находит — берёт её стандартный UUID
+`daba56c8-73ec-11df-a475-002264764cea`. Для другой конфигурации скопируйте её
+UUID из Greenbone Web UI (Configuration → Scan Configs) в
+`DOMAINSCOPE_OPENVAS_SCAN_CONFIG_ID`.
 
-Скопируйте UUID нужной конфигурации в `DOMAINSCOPE_OPENVAS_SCAN_CONFIG_ID`.
+**Port list:** по умолчанию `All TCP ports`; другой лист задаётся
+`DOMAINSCOPE_OPENVAS_PORT_LIST` (UUID или точное имя), см.
+[Порты сканирования](env-domainscope.md#как-порты-влияют-на-другие-сканеры).
 
 **Производительность:**
 
@@ -218,20 +218,20 @@ DOMAINSCOPE_OPENVAS_IP_SCOPE=public
 
 **Что делает:**
 
-- Для каждого открытого порта с TLS-протоколом по fingerprint (`https`, `imaps`, `pop3s`, `smtps`, `ldaps`) запрашивает certificate
-- Извлекает: issuer, subject, SAN, expiry date, signature algo
+- Для каждого открытого порта с TLS-протоколом по fingerprint (`https`, `imaps`, `pop3s`, `smtps`, `ldaps`) устанавливает TLS-соединение по IP и читает сертификат
 - Формирует находки:
-  - `LOW` — cert expires in 30 days (`DOMAINSCOPE_TLSX_CERT_EXPIRY_DAYS`)
-  - `MEDIUM` — cert expires in 7 days
-  - `HIGH` — cert expired
-  - `MEDIUM` — weak signature algo (`md5`/`sha1`)
+  - `HIGH` — сертификат истёк (`expired_cert`)
+  - `MEDIUM` — сертификат истекает в ближайшие `DOMAINSCOPE_TLSX_CERT_EXPIRY_DAYS` дней, по умолчанию 30 (`expiring_cert`)
+  - `MEDIUM` — самоподписанный сертификат (`self_signed_cert`)
+  - `MEDIUM` — TLS 1.0 или TLS 1.1 (`tls_old_version`)
+- Несовпадение имени в сертификате не проверяется: скан идёт по IP, и такая находка была бы ложной
 
 **Включение:**
 
 ```ini
 DOMAINSCOPE_TLSX_ENABLED=true
 DOMAINSCOPE_TLSX_CONCURRENCY=50              # параллельные хосты (default: 50)
-DOMAINSCOPE_TLSX_CERT_EXPIRY_DAYS=30         # порог LOW-warning, дней (default: 30)
+DOMAINSCOPE_TLSX_CERT_EXPIRY_DAYS=30         # порог expiring_cert, дней (default: 30)
 DOMAINSCOPE_TIME_LOOP_TLSX=21600             # каждые 6 часов
 ```
 
@@ -247,8 +247,9 @@ DOMAINSCOPE_TLSX_SARIF_API_TOKEN=<...>
 **Что делает:**
 
 - Использует внешние ZAP daemon'ы по REST API
-- Запускает full scan (spider + active scan) по обнаруженным web-приложениям
-- Каждое срабатывание → SARIF находка
+- По обнаруженным web-приложениям запускает Spider, затем AJAX Spider (`DOMAINSCOPE_ZAP_AJAX_SPIDER_TIMEOUT`, по умолчанию 300 с) и Active Scan
+- Один хост повторно сканируется не раньше чем через `DOMAINSCOPE_ZAP_RESCAN_PERIOD` (по умолчанию 86400 с)
+- В SARIF уходят находки с риском от YAML `zap.min_risk` и выше (по умолчанию `medium`); остальные остаются только в базе DomainScope
 
 **Включение:**
 
@@ -259,19 +260,20 @@ DOMAINSCOPE_ZAP_INSTANCES_JSON=[{"url":"http://zap-1:8090","api_key":"<key-1>"},
 DOMAINSCOPE_TIME_LOOP_ZAP=14400              # каждые 4 часа
 ```
 
-`DOMAINSCOPE_ZAP_INSTANCES_JSON` — единственный способ задать инстансы ZAP через ENV (отдельных `DOMAINSCOPE_ZAP_INSTANCES`/`DOMAINSCOPE_ZAP_API_KEY` **нет**). Каждый элемент массива — объект `{"url":"...","api_key":"..."}`; невалидный JSON роняет загрузку конфига. DomainScope round-robin'ит scan'ы между инстансами. Каждый instance держит свою БД сессий и темплейтов.
+`DOMAINSCOPE_ZAP_INSTANCES_JSON` — единственный способ задать инстансы ZAP через ENV (отдельных `DOMAINSCOPE_ZAP_INSTANCES`/`DOMAINSCOPE_ZAP_API_KEY` **нет**). Каждый элемент массива — объект `{"url":"...","api_key":"..."}`; невалидный JSON роняет загрузку конфига. У каждого инстанса своя очередь заданий; хост попадает в очередь по хешу корневого домена (все поддомены одного домена — в один инстанс), а если этот инстанс занят, а другой свободен, — в свободный.
 
 Для сканирования за аутентификацией задаётся `DOMAINSCOPE_ZAP_CREDENTIALS_JSON` — JSON-массив per-host учётных данных: `[{"host":"app.example.com","username":"u","password":"p","form_url":"https://app.example.com/login"}]`.
 
 **Тонкая настройка:**
 
-Через ZAP context-config (в репо `domainscope/docker/zap-config/`) можно задать:
+- политика Active Scan — `DOMAINSCOPE_ZAP_ACTIVE_SCAN_POLICY`: имя политики,
+  уже заведённой в ZAP; пусто — `Default Policy`;
+- сканирование за формой входа — `DOMAINSCOPE_ZAP_CREDENTIALS_JSON` (см. выше);
+- таймаут AJAX Spider и период повторного скана — переменные из блока выше.
 
-- Authentication context (для сканирования за SSO)
-- Exclude URLs (например, `/logout`)
-- Active scan policy (Aggressive / Default / Light)
-
-Конфигурация лежит в каталоге `docker/zap-config/` репозитория DomainScope.
+Каталог `docker/zap-config/` репозитория DomainScope — домашний каталог ZAP
+(`config.xml`) для dev-стенда `docker/docker-compose.dev.yml`; DomainScope его не
+читает.
 
 **Override:**
 
@@ -287,25 +289,26 @@ DOMAINSCOPE_ZAP_SARIF_API_TOKEN=<...>
 ```ini
 DOMAINSCOPE_SARIF_ENABLED=true
 DOMAINSCOPE_SARIF_AUTO_UPLOAD=true
-# Корень Hub БЕЗ /api/v1 — клиент сам дописывает /api/v1/products/<id>/reports.
-# С хвостом /api/v1 путь удвоится → 404 и находки НЕ доедут в Hub.
+# Корень Hub — клиент сам дописывает /api/v1/products/<id>/reports
+# (хвост /api/v1, если он есть, отрезается).
 DOMAINSCOPE_SARIF_API_ENDPOINT=https://hub.example.com
 DOMAINSCOPE_SARIF_PRODUCT_ID=<product-uuid>
 DOMAINSCOPE_SARIF_API_TOKEN=<api-key>
-DOMAINSCOPE_SARIF_SCANNER_NAME=domain-scope          # перепишется на конкретный сканер при upload
+DOMAINSCOPE_SARIF_SCANNER_NAME=DomainScope           # engine отчётов порт-скана (default); Nuclei — <имя>/Nuclei,
+                                                     # у OpenVAS, TLSX и ZAP имена фиксированные
 DOMAINSCOPE_SARIF_SCANNER_NODE=domain-scope-prod-01  # имя инстанса (для отслеживания)
 DOMAINSCOPE_SARIF_IP_SCOPE=all                       # all / public / private
-DOMAINSCOPE_SARIF_SAVE_LOCAL=false                   # если true — сохранять копию в /var/lib/domain-scope/sarif/
-DOMAINSCOPE_SARIF_LOCAL_PATH=/var/lib/domain-scope/sarif
+DOMAINSCOPE_SARIF_SAVE_LOCAL=false                   # default true — копия отчётов на диске
+DOMAINSCOPE_SARIF_LOCAL_PATH=/var/log/domain-scope/sarif   # значение в Docker-образе
 ```
 
 ### IP scope filter
 
-`DOMAINSCOPE_SARIF_IP_SCOPE` фильтрует, какие IP попадают в SARIF:
+`DOMAINSCOPE_SARIF_IP_SCOPE` определяет, какие адреса сканируются и попадают в SARIF:
 
 - `all` — все
-- `public` — только публичные (исключает RFC1918 = 10/8, 172.16/12, 192.168/16)
-- `private` — только приватные
+- `public` — только публичные: без RFC 1918 (10/8, 172.16/12, 192.168/16), loopback, link-local и IPv6 ULA (fc00::/7)
+- `private` — только приватные (те же диапазоны)
 
 Полезно когда DomainScope сканирует и внешний, и внутренний периметр, но Hub должен видеть только что-то одно (например, только публичный — для compliance-отчётности).
 
@@ -381,21 +384,20 @@ DomainScope **не имеет глобального rate limit** — кажды
 
 ## Мониторинг циклов
 
-В БД таблица `cycle_runs` хранит историю:
+Отдельной таблицы истории циклов и метрик Prometheus у DomainScope нет. Ход
+циклов виден в журнале (JSON в stdout) и в readiness-эндпоинте:
 
-```sql
-SELECT scanner, started_at, finished_at, status, items_processed, items_failed
-FROM cycle_runs
-ORDER BY started_at DESC
-LIMIT 20;
-```
-
-Если у вас Prometheus, DomainScope экспортирует:
-
-- `domainscope_cycle_runs_total{scanner,status}`
-- `domainscope_cycle_duration_seconds{scanner}`
-- `domainscope_scan_items_total{scanner,status}`
-- `domainscope_sarif_uploads_total{result}`
+- discovery и port scan пишут начало и конец цикла на уровне info
+  (`discovery cycle started` / `discovery cycle done`, `port scan cycle
+  started` / `port scan cycle done`), port scan — ещё сводку доставки
+  `sarif delivery` с `hosts_reported` и `total_findings`;
+- остальные сканеры пишут свои шаги: `openvas fresh start`,
+  `openvas: scan cycle complete, state cleared`, `tlsx findings synced`,
+  `zap scan complete`, загрузку отчётов — `… sarif report uploaded`;
+- при `DOMAINSCOPE_HEALTH_ENABLED=true` `GET /ready` отвечает `503`, если
+  discovery, port scan, а при включённых сканерах — Nuclei и ZAP не
+  завершались дольше двух своих интервалов (или ещё ни разу), либо база
+  недоступна. В теле ответа — какой цикл отстал.
 
 ## Связанные документы
 

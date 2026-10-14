@@ -1,11 +1,30 @@
 # Обновления
 
-## Обновление на 0.33
+Текущие опубликованные версии: **0.33** — у компонентов Hub (backend, worker,
+frontend, сканер инфраструктурного кода), **0.34** — у DomainScope. Версии
+Hub и DomainScope независимые, и совпадение номеров — не правило: полный
+набор образов есть не для каждой версии.
 
-Текущая опубликованная версия — **0.33** у всех компонентов: backend, worker,
-frontend, сканер инфраструктурного кода и DomainScope. Версии при этом
-независимые, и совпадение номеров — не правило: полный набор образов есть не
-для каждой версии.
+## Обновление DomainScope на 0.34
+
+Действий при обновлении не требуется: без новых ключей поведение прежнее.
+
+- **Параметры nmap задаются настройками** — шаблон таймингов, скорость,
+  параллелизм, таймауты, повторы, задержка, обнаружение узлов, дополнительные
+  аргументы и `--top-ports` (ключи `scanner_*` в `config.yml` и переменные
+  `DOMAINSCOPE_SCANNER_*`). Недопустимое значение роняет старт с именем
+  переменной; `DOMAINSCOPE_SCANNER_TOP_PORTS` и явный список портов
+  взаимоисключающие — заданные вместе, они тоже останавливают старт.
+- **Набор портов OpenVAS** — `DOMAINSCOPE_OPENVAS_PORT_LIST` (UUID или точное
+  имя существующего port list). Если такого списка в OpenVAS нет, цикл
+  OpenVAS завершается ошибкой; тихого отката на «All TCP ports» нет. Пустое
+  значение — прежнее поведение.
+- Исправлена уязвимость зависимости `golang.org/x/net` (CVE-2026-78669,
+  отказ в обслуживании по HTTP/2).
+
+Подробнее о ключах — [Переменные DomainScope](env-domainscope.md).
+
+## Обновление на 0.33
 
 0.33 — крупный релиз: плагинная платформа доведена до состояния, в котором она
 несёт интеграции целиком, а ядро от них разгружено. Ниже — только то, что
@@ -33,10 +52,13 @@ frontend, сканер инфраструктурного кода и DomainScop
 3. проверять применение по схеме, а не по статусу выката:
 
     ```bash
-    kubectl -n hub exec deploy/hub-backend -- \
-      psql "$DATABASE_URL" -c \
+    kubectl -n hub exec deploy/hub-postgres -- \
+      psql -U securityhub securityhub -c \
       "SELECT version_id, is_applied, tstamp FROM goose_db_version ORDER BY version_id DESC LIMIT 5;"
     ```
+
+    В образе backend клиента `psql` нет, поэтому запрос выполняется в поде
+    PostgreSQL.
 
 Резервная копия базы перед обновлением обязательна: обратных миграций нет.
 
@@ -195,7 +217,7 @@ Hub использует единую схему для всех компоне�
 X.Y.BUILD+COMMIT
 ```
 
-Пример: `0.9.20260602093200+a1b2c3d`
+Пример: `0.33.20260909120000+a1b2c3d`
 
 | Часть    | Что                                                  |
 | -------- | ---------------------------------------------------- |
@@ -220,9 +242,9 @@ curl https://hub.example.com/api/v1/version
 ```json
 {
   "component": "backend",
-  "version": "0.9.20260602093200+a1b2c3d",
+  "version": "0.33.20260909120000+a1b2c3d",
   "commit": "a1b2c3d",
-  "built_at": "2026-05-24T00:00:00Z"
+  "built_at": "2026-09-09T12:00:00Z"
 }
 ```
 
@@ -348,8 +370,7 @@ docker compose down
 # Восстановить БД из бэкапа (если миграции уже прокатились)
 gunzip -c /backup/hub-pre-upgrade.sql.gz | docker compose exec -T postgres psql -U securityhub securityhub
 
-# Откатиться на предыдущий образ (попросите у поставщика конкретный тэг)
-# В .env: HUB_IMAGE_TAG=0.9.PREVIOUS
+# Вернуть прежний тег образов: в .env HUB_VERSION=<прежняя версия>, например 0.32
 docker compose up -d
 ```
 
@@ -379,19 +400,22 @@ docker compose pull
 docker compose up -d
 ```
 
-Совместимость API между Hub и DomainScope: оба сервиса используют публичные REST эндпоинты Hub (`/api/v1/products/<id>/reports` и `/api/v1/projects/<id>/scope/proposals`). При major-bump поставщик отмечает в release notes изменения контракта, если они есть.
+В поставляемом `docker-compose.yml` Hub DomainScope описан в том же файле, и
+его версия задаётся отдельно — переменной `DS_VERSION` в `.env`.
+
+Совместимость API между Hub и DomainScope: DomainScope обращается к публичному REST API Hub (загрузка отчётов `/api/v1/products/<id>/reports`, периметр `/api/v1/projects/<id>/scope/...`), а Hub к DomainScope — для перепроверки (`/api/v1/rescan`, `/api/v1/probe`, `/api/v1/verify-finding`). При major-bump поставщик отмечает в release notes изменения контракта, если они есть.
 
 ## Frontend и backend совместимость
 
 Hub-frontend завязан на minor-версию backend. В footer UI отображается:
 
 ```
-v0.9.20260602+a1b (frontend)  /  v0.9.20260601+x9y (backend)
+frontend 0.33.20260909120000+a1b2c3d · backend 0.33.20260909120000+a1b2c3d
 ```
 
-При расхождении minor — warning в UI. При major — приложение может вести себя некорректно.
+При расхождении `X.Y` — предупреждение `version mismatch` в UI. При major — приложение может вести себя некорректно.
 
-В compose/k8s они обновляются вместе (один тэг `:latest`).
+В compose/k8s они обновляются вместе — одним явным тегом, например `0.33`.
 
 ## Расписание обновлений
 

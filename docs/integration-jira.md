@@ -68,7 +68,7 @@ flowchart TD
 
 | Метод и путь | Назначение |
 | --- | --- |
-| `GET /api/v1/projects/<id>/ticket-provider/config` | Настройки провайдера для проекта |
+| `GET /api/v1/projects/<id>/ticket-provider/config` | Настройки провайдера для проекта (право `write` на проект) |
 | `PUT /api/v1/projects/<id>/ticket-provider/config` | Изменение настроек (право `write` на проект) |
 
 Что важно знать о правке:
@@ -90,7 +90,7 @@ flowchart TD
 | --- | --- |
 | `base_url` | **Только базовый адрес**, без пути: `/rest/api/2/issue` плагин дописывает сам |
 | `project_key`, `issue_type`, `labels` | Куда и чем заводить |
-| `auth_method` | `basic` (email + API-токен, Cloud), `personal_access_token` (Bearer, Data Center), `oauth_client_credentials` (Cloud) |
+| `auth_method` | `basic` (email + API-токен, Cloud), `personal_access_token` (Bearer, Data Center), `oauth_client_credentials` (Cloud). Пусто — `basic` |
 | `email`, `api_token`, `client_id`, `client_secret` | Учётные данные; токен и секрет — секретные поля |
 | `projects` | Курируемый список целей: среди них человек выбирает при заведении |
 | `pid` | Числовой идентификатор проекта — нужен только для полуручного режима: форма адресуется id, а не ключом |
@@ -144,14 +144,16 @@ flowchart TD
 | `POST /api/v1/findings/ticket/bulk-link` | Привязка существующей задачи к группе |
 | `POST /api/v1/findings/ticket-url` | Ссылка на форму создания (полуручной режим) |
 | `POST /api/v1/findings/ticket-destination` | Предпросмотр: режим и настроена ли цель |
-| `POST /api/v1/projects/<id>/tickets/backfill` | Завести задачи по накопленной истории проекта |
+| `POST /api/v1/projects/<id>/tickets/backfill` | Завести задачи по накопленной истории проекта (право `admin` на проект) |
 
 Заведение требует права на **изменение** находки: в неё пишется ссылка.
 
 **Автосоздание при подтверждении** включается на проект — подтверждённая
 находка сразу получает задачу. Бэкфилл (`tickets/backfill`) догоняет историю:
 берёт подтверждённые находки без задачи, по 5000 за вызов, и в ответе
-сообщает остаток — вызывайте, пока он не станет нулём.
+сообщает остаток (`remaining`) — вызывайте, пока он не станет нулём. Бэкфилл
+работает только у проекта, привязанного к провайдеру и с включённым
+автосозданием, — иначе ответ `403`.
 
 ### Дубли исключены маркером
 
@@ -177,8 +179,10 @@ POST /api/v1/webhooks/ticketing/<project_id>/<secret>
 
 Разбор тела делает плагин — он знает формат своей системы; решение принимает
 Hub. Секрет вебхука ротируется запросом
-`POST /api/v1/projects/<id>/ticket-webhook/rotate` и возвращается **один раз**,
-в ответе.
+`POST /api/v1/projects/<id>/ticket-webhook/rotate` (право `admin` на проект) и
+возвращается **один раз**, в ответе, — вместе с готовым адресом приёмника,
+собранным из `HUB_BASE_URL`. Старый адрес после ротации перестаёт
+действовать.
 
 ### Опрос статусов
 

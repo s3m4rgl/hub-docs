@@ -4,13 +4,13 @@ DomainScope умеет двусторонне работать с NetBox:
 
 - **Импорт целей** (NetBox → DomainScope): IP-адреса и префиксы с указанным тегом становятся targets для сканирования — **только если Hub не подключён**
 - **Экспорт адресов цикла** (DomainScope → NetBox): публичные адреса текущего цикла добавляются в NetBox IPAM с тегами
-- **Экспорт доменов в NetBox DNS** (опц., DomainScope → NetBox): обнаруженные домены публикуются как DNS-зоны и A/AAAA-записи в NetBox-DNS plugin
+- **Экспорт доменов в NetBox DNS** (опц., DomainScope → NetBox): обнаруженные домены публикуются как DNS-зоны и A-записи в NetBox-DNS plugin
 
 ## Включение
 
 ```ini
 DOMAINSCOPE_NETBOX_ENABLED=true
-DOMAINSCOPE_NETBOX_API_ENDPOINT=https://netbox.example.com
+DOMAINSCOPE_NETBOX_API_ENDPOINT=https://netbox.example.com   # корень NetBox, без /api
 DOMAINSCOPE_NETBOX_API_TOKEN=<NetBox API token, формат nbt_...>
 ```
 
@@ -42,16 +42,27 @@ DOMAINSCOPE_TRUSTED_IP_TAGS=internal,production   # фильтр: сканиро
 
 ### Что попадает в targets
 
-- Все `ipam.IPAddress` с указанным тегом в статусе `active`
-- Все `ipam.Prefix` с тегом в статусе `active` — разворачиваются до отдельных IP (только IPv4)
-  - **Ограничение**: только сети /20 и меньше (макс 4096 IP)
+- Все `ipam.IPAddress` с тегом `DOMAINSCOPE_NETBOX_TAG` в статусе `active`
+- Все `ipam.Prefix` с тем же тегом в статусе `active` — разворачиваются до отдельных IP (только IPv4, IPv6-префиксы пропускаются с предупреждением)
+  - **Ограничение**: только сети /20 и меньше (макс 4096 IP); крупнее — пропускаются с предупреждением `netbox: prefix too large to expand, skipping`
   - Для большего диапазона — создайте дочерние prefix'ы с более узкими масками
+
+`DOMAINSCOPE_TRUSTED_IP_TAGS` — не источник целей, а фильтр поверх них: при
+непустом списке сканируются только адреса, которые сами или через свой prefix
+помечены в NetBox хотя бы одним из этих тегов и имеют статус из
+`DOMAINSCOPE_TRUSTED_IP_STATUSES` (по умолчанию `active,deprecated`).
 
 ### Метаданные
 
-В БД DomainScope для каждого IP сохраняются NetBox-теги, которые потом попадают в SARIF (как `properties.netbox_tags`). В Hub их видно в карточке находка'а.
+Произвольные теги NetBox (`owner_team`, `environment` и т.п.) в Hub не
+передаются. Для импортированного адреса DomainScope запоминает только тег
+импорта — по нему в [происхождении записи](domainscope-trails.md) появляется
+звено `netbox_import`.
 
-Полезно: `owner_team`, `environment`, `compliance_zone` теги в NetBox автоматически переедут в Hub.
+В SARIF (`properties.tags`) уходят теги владельца адреса: `asn:…`, `org:…`,
+`country:…`, `isp:…`. DomainScope берёт их из своего кеша (24 ч), из
+одноимённых тегов адреса в NetBox или из ip-api.com, а найденное добавляет
+тегами к адресу в NetBox, если адрес там уже есть.
 
 ## Экспорт адресов в NetBox IPAM (DomainScope → NetBox)
 
@@ -73,7 +84,9 @@ DOMAINSCOPE_NETBOX_CRAWLER_TAG=domainscope-crawler   # дополнительн�
 - адрес с этим тегом в другом статусе (например, `deprecated`) переводится в
   `active`;
 - адрес в статусе `active` не меняется;
-- отсутствующие теги создаются в NetBox автоматически.
+- отсутствующие теги создаются в NetBox автоматически;
+- к адресам, которые уже есть в IPAM, добавляются теги владельца (`asn:…`,
+  `org:…`, `country:…`, `isp:…`, см. [Метаданные](#метаданные)).
 
 Описание, custom fields и прочие поля DomainScope не заполняет. Адреса, которые
 перестали встречаться, в `deprecated` не переводятся и не удаляются.
@@ -133,7 +146,7 @@ DomainScope (операция идемпотентна — повторный в
 NetBox UI → Profile → API Tokens → Add:
 
 - **Description:** `domainscope-rw`
-- **Permissions:** `ipam.view_ipaddress`, `ipam.view_prefix`, `ipam.add_ipaddress`, `ipam.change_ipaddress`, `extras.view_tag`, `extras.add_tag` — запись в IPAM выполняется всегда при включённом NetBox; для NetBox DNS дополнительно права на объекты плагина
+- **Permissions:** `ipam.view_ipaddress`, `ipam.view_prefix`, `ipam.add_ipaddress`, `ipam.change_ipaddress`, `extras.view_tag`, `extras.add_tag` — запись в IPAM выполняется всегда при включённом NetBox; при `DOMAINSCOPE_NETBOX_TENANT` — ещё `tenancy.view_tenant` и `tenancy.add_tenant` (тенант создаётся при старте, если его нет); для NetBox DNS дополнительно права на объекты плагина
 - **Allowed IPs:** IP, с которого DomainScope ходит
 - **Expires:** опц. +1 год
 
@@ -206,10 +219,11 @@ NetBox sync — лёгкая операция (тысячи объектов ч�
 ### 1. Проверка чтения
 
 ```bash
-# Из контейнера DomainScope
-docker compose exec domain-scope curl -fs \
-  -H "Authorization: Token $DOMAINSCOPE_NETBOX_API_TOKEN" \
-  "$DOMAINSCOPE_NETBOX_API_ENDPOINT/api/ipam/ip-addresses/?tag=security-scope" | jq '.count'
+# Из контейнера DomainScope: curl в образе нет, есть wget; переменные
+# раскрываются внутри контейнера, jq — на хосте
+docker compose exec domain-scope sh -c \
+  'wget -qO- --header "Authorization: Token $DOMAINSCOPE_NETBOX_API_TOKEN" \
+  "$DOMAINSCOPE_NETBOX_API_ENDPOINT/api/ipam/ip-addresses/?tag=security-scope&limit=1"' | jq '.count'
 ```
 
 Должно вернуть число IP с этим тегом.

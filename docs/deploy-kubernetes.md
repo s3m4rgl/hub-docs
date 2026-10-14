@@ -8,15 +8,16 @@ Production-сценарий через Helm-чарты. Поддерживает
 
 Umbrella-чарт `hub-platform` собирает следующие subcharts:
 
-| Чарт                | Что деплоит                                               |
-| ------------------- | --------------------------------------------------------- |
-| `security-scan-hub` | Hub backend + worker + frontend + PostgreSQL              |
-| `domainscope`       | DomainScope daemon + PostgreSQL (опц. WireGuard sidecar)  |
-| `openvas` (опц.)    | Greenbone Community Edition (gvmd/gsad/ospd/pg-gvm/redis) |
-| `owasp-zap` (опц.)  | OWASP ZAP daemon (StatefulSet с PVC)                      |
-| `netbox` (опц.)     | NetBox IPAM/DCIM                                          |
+| Чарт (ключ в значениях)       | Что деплоит                                               |
+| ----------------------------- | --------------------------------------------------------- |
+| `security-scan-hub` (`hub`)   | Hub backend + worker + frontend + PostgreSQL              |
+| `domainscope` (`domainscope`) | DomainScope daemon + PostgreSQL (опц. WireGuard sidecar)  |
+| `openvas` (`openvas`)         | Greenbone Community Edition (gvmd/gsad/ospd/pg-gvm/redis) |
+| `owasp-zap` (`zap`)           | OWASP ZAP daemon (StatefulSet с PVC)                      |
 
-Дополнительно (вне umbrella): `sshub-atlassian-secrets-scanner` — CronJob для сканирования секретов в Jira/Confluence.
+Все четыре включены по умолчанию; каждый отключается ключом `<ключ>.enabled: false`.
+
+Дополнительно (вне umbrella): `netbox` — NetBox IPAM/DCIM, и `sshub-atlassian-secrets-scanner` — CronJob для сканирования секретов в Jira/Confluence.
 
 !!! warning "Сканерам с PVC нужен `fsGroup`"
 
@@ -80,95 +81,104 @@ helm install cert-manager jetstack/cert-manager \
   --set installCRDs=true
 ```
 
-Создайте `ClusterIssuer` для Let's Encrypt:
+`ClusterIssuer` для Let's Encrypt вручную создавать не нужно: при
+`tls.mode: letsencrypt` umbrella-чарт создаёт `letsencrypt-prod` сам (HTTP-01
+через указанный класс ingress). Заранее созданный объект с тем же именем
+приведёт к конфликту при установке.
 
-```yaml
-# letsencrypt-issuer.yaml
-apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
-metadata:
-  name: letsencrypt-prod
-spec:
-  acme:
-    email: admin@example.com
-    server: https://acme-v02.api.letsencrypt.org/directory
-    privateKeySecretRef: { name: letsencrypt-prod }
-    solvers:
-      - http01:
-          ingress: { class: traefik } # или nginx
-```
-
-```bash
-kubectl apply -f letsencrypt-issuer.yaml
-```
-
-Заготовьте `values.yaml` (override поверх дефолтов):
+Заготовьте `values.yaml` (override поверх дефолтов `charts/hub-platform/values.yaml`):
 
 ```yaml
 # values.yaml
 global:
   domain: hub.example.com
-  ingressClass: traefik # или nginx
+domain: hub.example.com # повторяет global.domain
+
+ingress:
+  className: traefik # или nginx
+tls:
+  mode: letsencrypt # selfsigned | letsencrypt | existing | disabled
+  letsencryptEmail: <ваш-email> # на него регистрируется учётная запись Let's Encrypt
+
+hub:
+  # Режим TLS и класс ingress сабчарты от umbrella не наследуют —
+  # задайте их и здесь (install.sh делает то же самое).
+  ingress:
+    className: traefik
   tls:
-    issuer: letsencrypt-prod
+    mode: letsencrypt
 
-securityScanHub:
-  image:
-    tag: "0.33"
-
-  env:
-    appEnv: production
-    frontendUrl: https://hub.example.com
-    allowedOrigins: https://hub.example.com
-    authMode: LOCAL # или SSO
+  backend:
+    replicas: 2
+    backend:
+      image:
+        tag: "0.33"
+      env:
+        appEnv: production
+        authMode: LOCAL # или SSO
+  worker:
+    replicas: 2
+    worker:
+      image:
+        tag: "0.33"
+  frontend:
+    frontend:
+      image:
+        tag: "0.33"
 
   pvc:
     postgresData:
       size: 30Gi # ~1 млн находок; расчёт — sizing.md#база-данных-hub
     backendStorage:
-      size: 10Gi # SARIF за срок хранения (7 дней) с запасом
+      size: 10Gi # SARIF за срок хранения (7 дней) с запасом; тот же размер у тома логов backend
     workerStorage:
       size: 2Gi # логи worker
 
-  secrets:
-    existingSecretName: hub-secrets # см. ниже
-
-  backend:
-    replicas: 2
-  worker:
-    replicas: 2
-
 domainscope:
   enabled: true
-  image:
-    tag: "0.34"
+  domainscope:
+    image:
+      tag: "0.34"
 
 openvas:
-  enabled: false # включите если нужен CVE-scanner
+  enabled: false # включите, если нужен CVE-сканер
 
-owaspZap:
+zap:
   enabled: false
 ```
 
-Создайте секрет руками или через sealed-secrets / external-secrets:
+`FRONTEND_URL` и адрес API для интерфейса umbrella выводит из `global.domain`
+сам.
 
-```bash
-kubectl create namespace hub
-kubectl -n hub create secret generic hub-secrets \
-  --from-literal=dbPassword='<strong-random>' \
-  --from-literal=jwtSecret="$(openssl rand -hex 32)" \
-  --from-literal=localAdminPassword='<strong-admin>' \
-  --from-literal=domainscopeDbPassword='<strong-random>' \
-  --from-literal=hubApiToken='<заполните после первого старта>'
+Секреты создаёт umbrella-чарт: при первой установке он генерирует случайные
+значения и сохраняет их в `hub-hub-secrets`, `hub-domainscope-secrets`,
+`hub-openvas-secrets` и `hub-zap-secrets` (аннотация
+`helm.sh/resource-policy: keep`; между обновлениями значения не меняются).
+Создавать эти объекты заранее не нужно — установка с уже существующими
+завершится ошибкой. Токен, с которым DomainScope обращается к Hub, чарт тоже
+выпускает сам. Чтобы задать свои значения, передайте блок `secrets:` отдельным
+файлом, который не хранится в git (пустое значение — сгенерировать):
+
+```yaml
+# secrets.yaml — не коммитить
+secrets:
+  hubDbPassword: '<strong-random>'
+  hubJwtSecret: '<openssl rand -hex 32>'
+  hubLocalAdminPassword: '<strong-admin>'
+  domainscopeDbPassword: '<strong-random>'
 ```
 
 Установка:
 
 ```bash
 helm install hub /opt/hub-charts/hub-platform \
-  -n hub \
-  -f values.yaml
+  -n hub --create-namespace \
+  --timeout 15m \
+  -f values.yaml -f secrets.yaml
 ```
+
+`--timeout 15m` — запас для post-install Job, который ждёт окончания миграций
+backend: пяти минут по умолчанию на медленном старте не хватает.
 
 Hub стартует через 2-5 минут. OpenVAS дополнительно качает CVE-фиды ~10-30 минут после первого старта.
 
@@ -227,24 +237,35 @@ spec:
 
 ## Сценарий C: WireGuard egress (изолированный сканинг)
 
-Если DomainScope должен сканировать перимметр через выделенный egress IP (например, для попадания в allowlist облачных провайдеров), DomainScope ходит через WG sidecar к отдельному WG-серверу. WG-server разворачивается отдельно — поставщик может предоставить готовый скрипт.
+Если сканеры должны обследовать периметр с выделенного egress IP (например, для попадания в allowlist облачных провайдеров), DomainScope, OpenVAS и OWASP ZAP ходят через WireGuard к отдельному WG-серверу: init-контейнер `wg-setup` поднимает туннель в поде каждого сканера. WG-сервер разворачивается отдельно — скриптами из `scripts/wg/` (`1-setup-server.sh`, `2-generate-clients.sh`, `3-register-peers.sh`; порядок описан в `scripts/wg/README.md`).
 
-В `values.yaml`:
+`2-generate-clients.sh` записывает блок `wireguard:` в `wg-values.yaml`; вместе с флагами, включающими туннель в каждом сабчарте, значения выглядят так:
 
 ```yaml
+wireguard:
+  enabled: true
+  serverPublicKey: "<server-pub-key>"
+  serverEndpoint: "<wg-vps-ip>:51820"
+  peers:
+    domainscope:
+      privateKey: "<client-priv-key>"
+      podIp: "10.200.0.2/32"
+    openvas:
+      privateKey: "<client-priv-key>"
+      podIp: "10.200.0.3/32"
+    zap:
+      privateKey: "<client-priv-key>"
+      podIp: "10.200.0.4/32"
+
 domainscope:
   wireguard:
     enabled: true
-    config: |
-      [Interface]
-      PrivateKey = <client-priv-key>
-      Address = 10.99.0.2/24
-
-      [Peer]
-      PublicKey = <server-pub-key>
-      Endpoint = <wg-vps-ip>:51820
-      AllowedIPs = 0.0.0.0/0
-      PersistentKeepalive = 25
+openvas:
+  wireguard:
+    enabled: true
+zap:
+  wireguard:
+    enabled: true
 ```
 
 ## Секреты
@@ -255,7 +276,7 @@ domainscope:
 - Hub JWT secret
 - Hub local admin password
 - DomainScope DB password
-- DomainScope Hub API token (из Service Account Hub, см. [Загрузка отчётов внешних сканеров](integration-sarif.md))
+- DomainScope Hub API token (в umbrella выпускается автоматически вместе с проектом по умолчанию; при раздельной установке — ключ Service Account Hub, см. [Загрузка отчётов внешних сканеров](integration-sarif.md))
 - Keycloak client secret (если SSO)
 - LLM API key (если AI-триаж)
 - Учётные данные трекера задач — токен Jira, GitHub или Trello (если ведёте
@@ -294,11 +315,15 @@ kubectl -n hub get pods
 # Логи backend (миграции должны прокатиться)
 kubectl -n hub logs deploy/hub-backend
 
-# Версия
-curl https://hub.example.com/version
+# Версия (корневой /version через ingress уходит во frontend — используйте путь API)
+curl https://hub.example.com/api/v1/version
+
+# Пароль администратора
+kubectl -n hub get secret hub-hub-secrets \
+  -o jsonpath='{.data.localAdminPassword}' | base64 -d
 
 # Войти в UI
-# https://hub.example.com — admin@localhost.local / <localAdminPassword>
+# https://hub.example.com — admin@localhost.local / пароль из команды выше
 
 # Swagger UI (документация API)
 # https://hub.example.com/swagger/index.html
@@ -313,10 +338,12 @@ curl https://hub.example.com/version
 tar -xzf hub-platform-charts-new.tar.gz -C /opt/hub-charts-new
 
 # Apply
-helm upgrade hub /opt/hub-charts-new/hub-platform -n hub -f values.yaml
+helm upgrade hub /opt/hub-charts-new/hub-platform -n hub --timeout 15m \
+  -f values.yaml -f secrets.yaml
 
-# Поды пересоздадутся последовательной заменой
-kubectl -n hub rollout restart deploy
+# Поды с изменившимся шаблоном helm пересоздаёт сам; backend и worker —
+# стратегией Recreate (старый под останавливается до старта нового).
+kubectl -n hub get pods -w
 ```
 
 Подробнее: [Обновления](upgrades.md).

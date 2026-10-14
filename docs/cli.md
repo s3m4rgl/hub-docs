@@ -21,13 +21,15 @@ sshub version
 
 ## Аутентификация
 
-Способов два, и они не взаимозаменяемы — у Hub две непересекающиеся группы
-маршрутов:
+Способов два, и они не взаимозаменяемы: часть маршрутов Hub принимает и ключ,
+и токен, остальные — только токен.
 
 | Способ | Заголовок | Куда пускает |
 | --- | --- | --- |
-| Ключ сервисного аккаунта | `X-API-Key` | Загрузка отчёта, инвентарь, дашборд, список находок, нарушения SLA |
-| Пользовательский токен | `Authorization: Bearer` | Правка находки, экспорт, массовые операции, администрирование |
+| Ключ сервисного аккаунта | `X-API-Key` | Загрузка отчёта, инвентарь, дашборд, список находок, нарушения SLA, правка находки (с правом `write_findings`) |
+| Пользовательский токен | `Authorization: Bearer` | Всё перечисленное, а также экспорт, массовые операции, задачи в трекере, перепроверка, администрирование |
+
+Если заданы оба значения, клиент отправляет токен.
 
 ```bash
 export SSHUB_SERVER=https://hub.example.com
@@ -68,6 +70,9 @@ sshub gate --product <uuid> --file semgrep.sarif --fail-on HIGH
 sshub gate --product <uuid> --file trivy.sarif --fail-on CRITICAL --timeout 10m
 ```
 
+По умолчанию `--fail-on` равен `HIGH`, `--timeout` — 5 минут. Флаг `--pr`
+передаёт номер запроса на слияние, `--commit` — ревизию.
+
 | Код | Что значит |
 | --- | --- |
 | `0` | Новых находок выше порога нет |
@@ -90,7 +95,7 @@ sshub gate --product <uuid> --file trivy.sarif --fail-on CRITICAL --timeout 10m
 
 ```bash
 sshub findings list --severity HIGH --status new --product <uuid> --limit 50
-sshub findings list --search "jwt" --json | jq '.data[].title'
+sshub findings list --search "jwt" --json | jq '.[].title'
 sshub findings create --product <uuid> --title "Открытый Redis" --severity HIGH \
   --host 10.0.0.5 --description "Без пароля" --engine custom/manual
 sshub findings update <finding-id> --status confirmed
@@ -120,8 +125,8 @@ sshub sla violations
 sshub reports upload --product <uuid> --file report.sarif --engine semgrep
 sshub reports export company --from 2026-08-01 --to 2026-08-31
 sshub reports export compliance --framework pci_dss --from 2026-08-01 --to 2026-08-31
-sshub reports export project --from 2026-08-01 --to 2026-08-31 --projects <uuid>
-sshub reports export product --from 2026-08-01 --to 2026-08-31 --out product.json
+sshub reports export project <uuid> --from 2026-08-01 --to 2026-08-31
+sshub reports export product <uuid> --from 2026-08-01 --to 2026-08-31 --out product.json
 ```
 
 ### Инвентарь
@@ -138,8 +143,8 @@ sshub resources projects delete <uuid> --yes
 ### Задачи во внешнем трекере
 
 ```bash
-sshub ticket-providers
-sshub ticket <finding-id> --plugin <installed-plugin-uuid> --target <цель>
+sshub findings ticket-providers
+sshub findings ticket <finding-id> --plugin <installed-plugin-uuid> --target <цель>
 ```
 
 Подробности — в [Учёте задач](integration-jira.md).
@@ -147,8 +152,8 @@ sshub ticket <finding-id> --plugin <installed-plugin-uuid> --target <цель>
 ### Перепроверка и триаж
 
 ```bash
-sshub rescan <finding-id> --via scanner   # или --via llm
-sshub reanalyze <finding-id>
+sshub findings rescan <finding-id> --via scanner   # или --via llm
+sshub findings reanalyze <finding-id>
 ```
 
 ### Фоновые задачи
@@ -174,14 +179,15 @@ sshub access-requests create --resource-type project --resource-id <uuid> \
 
 ## Вывод для скриптов
 
-Флаг `--json` отдаёт ответ сервера как есть — для `jq` и автоматизации:
+Флаг `--json` выводит ответ сервера в JSON — для `jq` и автоматизации. Обёртка
+`data` при этом, как правило, снимается: список находок выводится массивом.
 
 ```bash
 sshub findings list --severity CRITICAL --json \
-  | jq -r '.data[] | [.id, .title] | @tsv'
+  | jq -r '.[] | [.id, .title] | @tsv'
 ```
 
-Размер страницы ограничен сервером. Значение выше потолка клиент отвергает
+Размер страницы ограничен сервером (не больше 1000). Значение выше потолка клиент отвергает
 явно, а не подставляет умолчание молча: «показано 20» вместо запрошенных 5000
 читалось бы как «столько и есть».
 

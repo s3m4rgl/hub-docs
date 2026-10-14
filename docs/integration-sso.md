@@ -17,7 +17,11 @@ SSO_PROVIDERS=keycloak,azure     # Keycloak + Azure AD
 SSO_PROVIDERS=keycloak,okta      # Keycloak + Okta
 ```
 
-Каждый провайдер из списка отображается отдельной кнопкой на странице логина Hub. Имя в списке — идентификатор провайдера (произвольная строка нижнего регистра).
+Каждый провайдер из списка отображается отдельной кнопкой на странице логина Hub. Имя в списке — идентификатор провайдера (регистр не важен: имя приводится к нижнему).
+
+Провайдер, который не удалось инициализировать при старте (IdP недоступен, discovery не отвечает, в production адрес не HTTPS), пропускается: backend продолжает работать, в журнале появляется ошибка `SSO provider unavailable — skipped at startup`, а кнопки этого провайдера на странице входа нет. После устранения причины backend нужно перезапустить.
+
+Вход через SSO требует лицензии с функцией SSO: при работающем сервисе лицензий без неё маршруты входа отвечают `402`.
 
 ### Маршруты логина
 
@@ -38,7 +42,7 @@ SSO_PROVIDERS=keycloak,okta      # Keycloak + Okta
 
 | Переменная | Назначение | Обязательна | По умолчанию |
 |---|---|---|---|
-| `OIDC_<NAME>_DISPLAY_NAME` | Метка на кнопке входа | Нет | имя провайдера |
+| `OIDC_<NAME>_DISPLAY_NAME` | Метка на кнопке входа | Нет | имя провайдера с заглавной буквы (`azure` → `Azure`) |
 | `OIDC_<NAME>_DISCOVERY_URL` | URL OIDC well-known (`/.well-known/openid-configuration`) | Да (или задайте эндпоинт-overrides) | — |
 | `OIDC_<NAME>_CLIENT_ID` | Client ID в IdP | Да | — |
 | `OIDC_<NAME>_CLIENT_SECRET` | Client Secret | Да | — |
@@ -51,12 +55,12 @@ SSO_PROVIDERS=keycloak,okta      # Keycloak + Okta
 | `OIDC_<NAME>_ISSUER` | Переопределение issuer | Нет | из discovery |
 | `OIDC_<NAME>_END_SESSION_URL` | Переопределение end_session_endpoint | Нет | из discovery |
 
-**Разрешение эндпоинты**: явный override > discovery document > ошибка при старте.
+**Разрешение эндпоинтов**: явный override > discovery document. Если эндпоинт не удалось получить ни так, ни так, провайдер при старте пропускается (см. выше). В `APP_ENV=production` все адреса провайдера обязаны быть HTTPS.
 
 ### Идентификация пользователей
 
 - Пользователь сопоставляется по паре `(provider, subject)` (поле `sub` из JWT).
-- При первом входе нового пользователя: Hub ищет существующий аккаунт по **верифицированному email** и привязывает к нему; если аккаунта нет и `AUTO_PROVISION=true` — создаёт нового со статусом **active**, ролью **viewer** (расширить доступ к продуктам/проектам может администратор через UI Hub → Admin → Users).
+- При первом входе нового пользователя: Hub ищет существующий аккаунт по **верифицированному email** и привязывает к нему; если аккаунта нет и `AUTO_PROVISION=true` — создаёт нового со статусом **active**, ролью **viewer** (расширить доступ к продуктам/проектам может администратор в разделе **Управление → Пользователи**).
 - Hub принимает `email_verified` как булево `true` или строку `"true"`/`"1"`. Если IdP **не эмитирует** поле `email_verified` (например, Microsoft Entra ID v2) — без `OIDC_<NAME>_TRUST_EMAIL=true` вход завершится ошибкой 403. В этом случае оператор явно подтверждает, что IdP берёт на себя ответственность за верификацию email.
 - Маппинг ролей из групп IdP **не поддерживается** (роли управляются внутри Hub).
 
@@ -70,8 +74,10 @@ sequenceDiagram
     participant I as Провайдер OIDC
 
     B->>H: /auth/sso/<провайдер>/login
-    H->>I: перенаправление на страницу входа
-    I-->>H: код авторизации через redirect
+    H-->>B: перенаправление на страницу входа провайдера
+    B->>I: вход пользователя
+    I-->>B: redirect на {FRONTEND_URL}/auth/callback с кодом
+    B->>H: /auth/sso/<провайдер>/callback
     H->>I: обмен кода на токены
     H->>H: создание или обновление<br/>пользователя в базе
     H-->>B: внутренний JWT Hub
@@ -88,7 +94,11 @@ sequenceDiagram
     это тот же **сценарий B**, отличается только адресация.
 
 Разверните Keycloak, затем настройте realm и клиент, как описано в
-[сценарии B](#что-админ-настраивает-в-keycloak), и задайте Hub:
+[сценарии B](#что-админ-настраивает-в-keycloak), и задайте Hub. В поставляемом
+`docker-compose.yml` переменные backend перечислены прямо в секции
+`environment:` сервиса `backend`, поэтому правьте их там: замените
+`AUTH_MODE: LOCAL` и добавьте переменные Keycloak — значение в `.env`, не
+упомянутое в `environment:`, до backend не дойдёт.
 
 ```ini
 AUTH_MODE=SSO
@@ -100,7 +110,13 @@ KEYCLOAK_CLIENT_ID=security-hub
 KEYCLOAK_CLIENT_SECRET=<из Keycloak: Clients → security-hub → Credentials>
 ```
 
-Перезапустите backend: `docker compose restart backend`.
+Пересоздайте контейнер backend: `docker compose up -d backend`. Команда
+`docker compose restart` новых значений окружения не применяет.
+
+Адреса `http://` здесь допустимы только потому, что поставляемый
+`docker-compose.yml` запускает backend с `APP_ENV=development`. В любом другом
+окружении (пустой `APP_ENV` тоже считается production) все адреса Keycloak
+обязаны быть HTTPS — иначе backend не стартует.
 
 !!! warning "Значение по умолчанию не подойдёт"
 
@@ -176,7 +192,7 @@ KEYCLOAK_CLIENT_SECRET=<из Keycloak: Clients → security-hub → Credentials>
 kcadm.sh update realms/securityhub -s sslRequired=EXTERNAL
 ```
 
-Для dev можно `sslRequired=NONE`, но Hub в `APP_ENV=production` откажется работать с HTTP-Keycloak.
+Для dev можно `sslRequired=NONE`, но Hub в `APP_ENV=production` (это значение по умолчанию, если `APP_ENV` не задан) откажется работать с HTTP-Keycloak.
 
 ### Переменные окружения Hub
 
@@ -200,7 +216,7 @@ KEYCLOAK_JWKS_URL=https://keycloak.example.com/realms/securityhub/protocol/openi
 KEYCLOAK_TOKEN_URL=https://keycloak.example.com/realms/securityhub/protocol/openid-connect/token
 ```
 
-В `APP_ENV=production` оба обязаны быть HTTPS.
+В `APP_ENV=production` оба обязаны быть HTTPS — как и `KEYCLOAK_URL`, `KEYCLOAK_PUBLIC_URL`, `KC_JWKS_URL` и `KC_ISSUER`.
 
 ## Сценарий C: Transparent SSO (внешний JWT)
 
@@ -232,6 +248,8 @@ ATOM_IDP_BASE_URL=https://idp.example.com   # для CORS
    - По `email` (только если `email_verified=true`)
    - Если не найден и `KC_AUTO_PROVISION=true` → создаёт нового без ролей
 
+Принимаются только токены с подписью RS256.
+
 ### WARNING: aud=account
 
 В Keycloak `account` — built-in client (для UI самого Keycloak). По умолчанию access token от любого realm-юзера может включать `aud=account`. **Не добавляйте `account` в `KC_AUDIENCES` в production** — это сделает Hub доступным для любого пользователя realm без проверки целевой аудитории.
@@ -254,8 +272,9 @@ ATOM_IDP_BASE_URL=https://atom-idp.example.com
 
 При `KC_AUTO_PROVISION=true`:
 
-- Новый юзер создаётся с `email`, `username`, `keycloak_id` из JWT
-- **Без ролей** — для доступа админ должен назначить роль через UI Hub → Admin → Users
+- Новый юзер создаётся с `keycloak_id` (`sub`), `email` и полным именем (`name`) из JWT
+- `email` берётся из токена, только если `email_verified=true`; иначе — и если адреса в токене нет вовсе — пользователь всё равно создаётся, но с синтетическим адресом, построенным по `sub`
+- **Без ролей** — для доступа админ должен назначить роль в разделе **Управление → Пользователи**
 
 !!! note "Первый администратор без выключения SSO"
 
@@ -263,8 +282,9 @@ ATOM_IDP_BASE_URL=https://atom-idp.example.com
     администратора в `BOOTSTRAP_ADMIN_EMAILS` — при входе через провайдера он
     получит роль `admin`. Адрес, который провайдер не подтвердил, роли не
     получает; Hub при старте предупреждает, что механизм включён. Уберите
-    переменную, как только права розданы.
-- Без email юзер не создаётся (логируется warning)
+    переменную, как только права розданы. Список действует при SSO-входе
+    через страницу логина Hub; на запросы с внешним JWT (сценарий C) он не
+    распространяется.
 
 При `KC_AUTO_PROVISION=false`: внешние JWT принимаются только для уже существующих юзеров.
 
@@ -329,7 +349,7 @@ LOCAL_ADMIN_PASSWORD=<пароль>
 ```
 
 ```bash
-docker compose restart backend
+docker compose up -d backend
 # Войдите как admin@localhost.local / LOCAL_ADMIN_PASSWORD
 ```
 
@@ -345,8 +365,8 @@ docker compose exec backend curl -fs \
 # 2. JWKS отдаёт ключи
 curl -fs $KEYCLOAK_PUBLIC_URL/realms/$KEYCLOAK_REALM/protocol/openid-connect/certs | jq '.keys[0].kid'
 
-# 3. UI редиректит на Keycloak
-curl -sI https://hub.example.com/auth/keycloak/login | grep Location
+# 3. Backend редиректит на Keycloak
+curl -sI https://hub.example.com/api/v1/auth/keycloak/login | grep Location
 
 # 4. Логи backend при логине
 docker compose logs -f backend | grep -i keycloak

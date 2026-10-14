@@ -113,6 +113,8 @@ services:
       DB_USER: securityhub
       DB_PASSWORD: ${DB_PASSWORD:-securityhub123}
       LOCAL_ADMIN_PASSWORD: ${LOCAL_ADMIN_PASSWORD:-Admin1234!}
+      # Домены, которые bootstrap кладёт в scope проекта (их заберёт DomainScope).
+      DOMAINSCOPE_TARGETS: ${DOMAINSCOPE_TARGETS:-example.com}
     volumes:
       - ./bootstrap:/bootstrap:ro
       - scanner_shared:/shared
@@ -130,8 +132,8 @@ services:
   # Автоматически подхватывает цели из Hub Scope, загружает находки через SARIF.
   # Токен и product_id получает из общего тома (записывает bootstrap).
   #
-  # Чтобы включить DomainScope, раскомментируйте оба сервиса ниже.
-  # Чтобы выключить — закомментируйте или удалите их.
+  # Сервисы ds-postgres и domainscope включены по умолчанию.
+  # Чтобы выключить DomainScope — закомментируйте или удалите оба сервиса.
   # После первого запуска перезапустите backend (роль admin применяется через
   # restart, а токен записывается bootstrap однократно):
   #   docker compose restart backend
@@ -153,7 +155,7 @@ services:
     restart: unless-stopped
 
   domainscope:
-    image: dexionius/domain-scope:${DS_VERSION:-0.33}
+    image: dexionius/domain-scope:${DS_VERSION:-0.34}
     container_name: ds-scanner
     # Entrypoint-обёртка: ждёт scanner.env от bootstrap, экспортирует токен
     # и product_id, затем запускает /domain-scope daemon run.

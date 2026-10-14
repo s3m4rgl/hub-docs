@@ -152,7 +152,7 @@ kubectl exec -n hub deploy/hub-domainscope-domainscope -c domainscope -- \
 kubectl exec -n hub hub-zap-0 -- \
     sh -c 'curl -s https://icanhazip.com'
 kubectl exec -n hub deploy/hub-openvas -c gmp-bridge -- \
-    sh -c 'curl -s https://icanhazip.com'
+    sh -c 'wget -qO- https://icanhazip.com'   # в alpine/socat нет curl
 
 # На WG-сервере: 3 активных peer'а, у всех свежий handshake
 sudo wg show wg0
