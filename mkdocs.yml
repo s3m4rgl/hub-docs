@@ -102,6 +102,7 @@ nav:
       - Установка: domainscope-install.md
       - Управление сканерами: domainscope-scanners.md
       - Синхронизация с NetBox: domainscope-netbox.md
+      - Расширение периметра: domainscope-scope-discovery.md
       - Происхождение записей: domainscope-trails.md
   - Справочник и эксплуатация:
       - REST API: api.md

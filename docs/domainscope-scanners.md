@@ -48,6 +48,10 @@ DomainScope содержит шесть независимых сканеров.
     зоны появляется с задержкой до суток и больше. Исправление отслеживается в
     [DomainScope#9](https://gitlab.com/hub_infosec/DomainScope/-/work_items/9).
 
+Что именно перечисляется, когда поддомен сканируется сразу, а когда уходит
+предложением в Hub, и чего discovery не умеет — на странице
+[Расширение периметра](domainscope-scope-discovery.md).
+
 **Конфиг:**
 
 ```ini
@@ -378,5 +382,6 @@ LIMIT 20;
 
 ## Связанные документы
 
+- [Расширение периметра: обнаружение доменов и адресов](domainscope-scope-discovery.md) — как находятся и предлагаются новые домены
 - [Синхронизация с NetBox](domainscope-netbox.md) — NetBox sync
 - [Происхождение записей периметра](domainscope-trails.md) — discovery trails
