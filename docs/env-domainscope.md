@@ -18,9 +18,9 @@
 
 | Переменная | Назначение | Значения | По умолчанию |
 |---|---|---|---|
-| `DOMAINSCOPE_DOMAINS` | Домены для мониторинга/сканирования | CSV доменов | пусто (берётся из YAML/Hub Scope API) |
+| `DOMAINSCOPE_DOMAINS` | Исходные зоны для обнаружения поддоменов. При подключённом Hub сканируются, только если их допускает периметр Hub | CSV доменов | пусто (берётся из YAML/Hub Scope API) |
 | `DOMAINSCOPE_IGNORED_DOMAINS` | Корневые зоны, всегда игнорируемые (напр. `reg.ru`) | CSV доменов | пусто |
-| `DOMAINSCOPE_TARGET_IPS` | IP для прямого сканирования | CSV IP | пусто |
+| `DOMAINSCOPE_TARGET_IPS` | IP для прямого сканирования. Только одиночные адреса: значение с маской (`192.0.2.0/24`) отбрасывается с предупреждением `invalid ip address, skipping` (известное ограничение, [DomainScope#8](https://gitlab.com/hub_infosec/DomainScope/-/work_items/8)) | CSV IP | пусто |
 | `DOMAINSCOPE_TARGET_PORTS` | Порты сканирования | `80,443,1000-2000` (одиночные + диапазоны) | пусто |
 | `DOMAINSCOPE_FINGERPRINT_TIMEOUT` | Таймаут fingerprinting, сек | uint | `5` |
 
@@ -83,10 +83,10 @@
 
 | Переменная | Назначение | Значения | По умолчанию |
 |---|---|---|---|
-| `DOMAINSCOPE_HUB_ENABLED` | Тянуть scope (домены) из Hub | bool | `false` |
+| `DOMAINSCOPE_HUB_ENABLED` | Брать периметр (домены и подсети) из Hub, слать туда предложения, инвентарь и отчёт о резолве. Цели из NetBox IPAM при этом не загружаются | bool | `false` |
 | `DOMAINSCOPE_HUB_API_ENDPOINT` | URL Hub API | URL | пусто |
 | `DOMAINSCOPE_HUB_API_TOKEN` | Токен сервис-аккаунта (X-API-Key, секрет) | строка | пусто |
-| `DOMAINSCOPE_HUB_PROJECT_IDS` | UUID проектов Hub | CSV UUID | пусто |
+| `DOMAINSCOPE_HUB_PROJECT_IDS` | UUID проекта Hub. Список принимается, но используется только первый идентификатор (известное ограничение, [DomainScope#7](https://gitlab.com/hub_infosec/DomainScope/-/work_items/7)) | CSV UUID | пусто |
 | `DOMAINSCOPE_HUB_INSECURE` | Разрешить `http://` Hub эндпоинт в prod | bool | `false` |
 
 > При `enabled=true` обязательны `api_endpoint`, `api_token`, `project_ids`; в prod — `https://` (если нет `HUB_INSECURE=true`).
@@ -95,11 +95,11 @@
 
 | Переменная | Назначение | Значения | По умолчанию |
 |---|---|---|---|
-| `DOMAINSCOPE_NETBOX_ENABLED` | Импорт IP из NetBox IPAM | bool | `false` |
+| `DOMAINSCOPE_NETBOX_ENABLED` | Импорт IP из NetBox IPAM (только без Hub) и обратная запись адресов цикла в IPAM | bool | `false` |
 | `DOMAINSCOPE_NETBOX_API_ENDPOINT` | URL NetBox | URL | пусто |
 | `DOMAINSCOPE_NETBOX_API_TOKEN` | API-токен NetBox (секрет) | строка | пусто |
-| `DOMAINSCOPE_NETBOX_TAG` | Тег IP для фильтрации импорта | строка | `public-ip` |
-| `DOMAINSCOPE_NETBOX_CRAWLER_TAG` | Тег для IP, добавленных DomainScope | строка | `domainscope-crawler` |
+| `DOMAINSCOPE_NETBOX_TAG` | Тег IP для импорта целей; его же получают адреса, которые DomainScope записывает в IPAM | строка | `public-ip` |
+| `DOMAINSCOPE_NETBOX_CRAWLER_TAG` | Дополнительный тег для IP, добавленных DomainScope. Пустое значение убирает только этот тег, запись в IPAM не отключает ([DomainScope#10](https://gitlab.com/hub_infosec/DomainScope/-/work_items/10)) | строка | `domainscope-crawler` |
 | `DOMAINSCOPE_NETBOX_INSECURE` | Пропустить TLS-проверку | bool | `false` |
 | `DOMAINSCOPE_NETBOX_IGNORE_SCAN_TAG` | Тег исключения из сканирования | строка | `ignore-scan` |
 | `DOMAINSCOPE_NETBOX_PENDING_REVIEW_TAG` | Тег зон, ожидающих проверки | строка | `pending-review` |

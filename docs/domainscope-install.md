@@ -94,12 +94,20 @@ docker compose logs -f domain-scope
 После старта в логах:
 
 ```
-INFO Starting discovery cycle (loop=21600s)
-INFO Subfinder found N new subdomains for example.com
-INFO Resolving DNS for N domains
-INFO Starting port scan cycle
-INFO SARIF uploaded to https://hub.example.com (results=N)
+INFO  discovery cycle started
+INFO  subfinder started          {"domains": 1, "enumerating": 1, "reused_from_db": 0, ...}
+INFO  subfinder phase complete   {"domains": 1}
+INFO  dns resolve phase done     {"scannable_ips": N, "ignored_ips": 0, ...}
+INFO  discovery cycle done       {"scannable_ips": N, "ignored_ips": 0}
+INFO  port scan cycle started
+INFO  sarif delivery             {"hosts_reported": N, "total_findings": N}
+INFO  port scan cycle done
 ```
+
+Сканирование портов ждёт окончания первого цикла обнаружения (`waiting for
+first discovery cycle to complete`), если в базе ещё нет данных. Загрузка
+отчёта по каждому хосту пишется на уровне debug (`sarif report uploaded`),
+ошибка загрузки — на уровне error.
 
 ### 4. Проверка состояния
 

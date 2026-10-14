@@ -10,7 +10,7 @@
 4. **OpenVAS** (опц.) — CVE-сканирование (Greenbone Community Edition)
 5. **TLSX** — анализ TLS-сертификатов (expiry, weak ciphers)
 6. **OWASP ZAP** (опц.) — активный DAST против найденных web-приложений
-7. **NetBox sync** — импорт scope из NetBox IPAM, экспорт обнаруженных IP
+7. **NetBox sync** — импорт целей из NetBox IPAM (только без Hub), запись адресов цикла обратно в IPAM, опционально экспорт доменов в NetBox DNS
 
 ## Интеграция с Hub
 
@@ -53,7 +53,7 @@ DomainScope использует тот же механизм, что и люб�
 
 **2. Scope proposals (DomainScope → Hub):**
 
-Когда DomainScope находит новый домен или IP (не в текущем scope проекта), он шлёт proposal — тело запроса всегда массив, до 100 элементов:
+Когда subfinder находит поддомен, для которого в периметре проекта нет точной записи включения, DomainScope не сканирует его, а шлёт proposal — тело запроса всегда массив, до 100 элементов. Предложения всегда доменные: адреса DomainScope не предлагает.
 
 ```
 POST https://hub.example.com/api/v1/projects/<project_id>/scope/proposals
@@ -70,7 +70,7 @@ X-API-Key: <ключ сервисной учётной записи>
 ]
 ```
 
-В Hub UI админ видит proposal'ы, подтверждает (добавляет в scope) или отклоняет.
+В Hub UI (проект → Скоуп → «Предложения») админ одобряет предложение как включение или как исключение либо отклоняет его. Отклонённое предложение вернётся на следующем цикле — чтобы домен не всплывал, его исключают.
 
 Помимо этих двух потоков DomainScope шлёт в Hub инвентарь обнаруженных пар домен ↔ IP и отчёт о доменах, переставших резолвиться, а периметр для сканирования забирает из Hub. Полный процесс связки — [Связка DomainScope и Hub](perimeter-integration.md).
 
@@ -154,7 +154,7 @@ Hub получает результаты как обычные SARIF-отчёт
 
 ### Сценарий 2: ad-hoc сканирование
 
-Через `DOMAINSCOPE_DOMAINS` задаётся одноразовый список → запускается daemon, дожидается завершения первого цикла → стопается. Подходит для one-off аудитов.
+Через `DOMAINSCOPE_DOMAINS` задаётся одноразовый список → запускается daemon → после первого цикла (`discovery cycle done`, затем `port scan cycle done`) его останавливают вручную: режима «один проход и выход» нет. Подходит для one-off аудитов.
 
 ### Сценарий 3: тестовый стенд без NetBox
 
@@ -164,15 +164,18 @@ DOMAINSCOPE_NETBOX_ENABLED=false
 DOMAINSCOPE_SARIF_AUTO_UPLOAD=true
 ```
 
-Hub принимает scope как proposals, админ ревьюит.
+Без Hub (`DOMAINSCOPE_HUB_ENABLED` не задан) предложений нет: все найденные
+поддомены сканируются сразу, в Hub уходят только отчёты SARIF.
 
 ### Сценарий 4: полная prod-сборка
 
 ```ini
-DOMAINSCOPE_NETBOX_ENABLED=true            # тянет scope из NetBox
+DOMAINSCOPE_NETBOX_ENABLED=true            # ignore-scan, trusted-фильтр, запись адресов в IPAM
+                                           # (цели из NetBox при включённом Hub не берутся)
 DOMAINSCOPE_NETBOX_API_ENDPOINT=https://netbox.example.com
 DOMAINSCOPE_NETBOX_API_TOKEN=<...>
 
+DOMAINSCOPE_HUB_ENABLED=true               # периметр из Hub, предложения и инвентарь
 DOMAINSCOPE_HUB_API_ENDPOINT=https://hub.example.com
 DOMAINSCOPE_HUB_API_TOKEN=<...>
 DOMAINSCOPE_HUB_PROJECT_IDS=<uuid-проекта>

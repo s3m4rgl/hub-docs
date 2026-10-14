@@ -182,7 +182,9 @@ Swagger UI: он меняется чаще, чем эта страница.
 | `POST /projects/<id>/scope/proposals` | Предложение добавить обнаруженный объект | `upload_report` |
 | `POST /projects/<id>/scope/assets` | Инвентарь: обнаруженные пары домен ↔ IP | `upload_report` |
 | `POST /projects/<id>/scope/resolution-report` | Домены, переставшие или снова начавшие резолвиться | `upload_report` |
-| `GET /projects/<id>/scope/proposals` | Список предложений, ожидающих решения | любое право на проект |
+| `GET /projects/<id>/scope/proposals` | Список предложений; параметр `status` (`pending`, `approved`, `rejected`) | любое право на проект |
+| `PUT /projects/<id>/scope/proposals/<proposal_id>` | Решение по предложению | `manage_scope` |
+| `POST /projects/<id>/scope/proposals/batch-review` | Решение по пачке предложений (до 200) | `manage_scope` |
 | `POST /projects/<id>/scope/entries` | Добавление записи | `manage_scope` |
 | `POST /projects/<id>/scope/import/netbox` | Импорт из NetBox | `manage_scope` |
 
