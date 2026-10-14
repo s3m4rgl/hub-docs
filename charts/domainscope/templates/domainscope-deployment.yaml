@@ -320,6 +320,12 @@ spec:
         {{- end }}
         - name: KUBERNETES_CLUSTER_DOMAIN
           value: {{ .Values.kubernetesClusterDomain | quote }}
+        ## extraEnv — переменные DOMAINSCOPE_*, которых нет в фиксированном списке
+        ## выше (SCANNER_TIMING_TEMPLATE, SCANNER_TOP_PORTS, OPENVAS_PORT_LIST…).
+        ## Идёт последним: при совпадении имени перекрывает значение из списка.
+        {{- with .Values.domainscope.extraEnv }}
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
         resources:
           {{- toYaml .Values.domainscope.resources | nindent 10 }}
         securityContext:
