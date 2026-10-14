@@ -139,7 +139,7 @@ securityScanHub:
 domainscope:
   enabled: true
   image:
-    tag: "0.33"
+    tag: "0.34"
 
 openvas:
   enabled: false # включите если нужен CVE-scanner

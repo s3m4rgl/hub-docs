@@ -128,7 +128,7 @@ DomainScope включён в umbrella-чарт `hub-platform` (см. [Разв�
 domainscope:
   enabled: true
   image:
-    tag: "0.33"
+    tag: "0.34"
 
   env:
     DOMAINSCOPE_DOMAINS: "example.com,subsidiary.com"
