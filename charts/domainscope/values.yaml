@@ -40,6 +40,15 @@ domainscope:
     limits:
       cpu: "4000m"
       memory: "4Gi"
+  ## Произвольные переменные окружения поверх env ниже — для настроек, у которых
+  ## нет своего ключа в values (полный перечень — docs/env-domainscope.md):
+  ##   extraEnv:
+  ##   - name: DOMAINSCOPE_SCANNER_TIMING_TEMPLATE
+  ##     value: "3"
+  ##   - name: DOMAINSCOPE_OPENVAS_PORT_LIST
+  ##     value: "All IANA assigned TCP"
+  ## Поддерживается и valueFrom (secretKeyRef) — для секретов.
+  extraEnv: []
   env:
     # Цели сканирования
     domains: ""
