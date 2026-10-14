@@ -82,10 +82,11 @@ https://<адрес-вашего-hub>/swagger/index.html
 | `202` | Принято в обработку; результат появится позже |
 | `400` | Некорректный запрос: неверное поле, недопустимое расширение файла |
 | `401` | Нет аутентификации, ключ неверен, истёк или отозван |
+| `402` | Возможность не включена лицензией |
 | `403` | Аутентификация есть, прав на этот объект нет |
 | `404` | Объект не найден либо возможность выключена |
 | `409` | Конфликт: объект уже существует |
-| `413` | Тело запроса больше допустимого |
+| `413` | Тело запроса больше допустимого: 2 МиБ для обычных запросов; для загрузки отчёта — `MAX_UPLOAD_SIZE_MB` и предел разбора формата |
 | `422` | Запрос корректен, но выполнить его нельзя в текущем состоянии |
 | `429` | Превышена частота запросов |
 | `503` | Очередь задач недоступна |
@@ -109,9 +110,11 @@ Content-Type: multipart/form-data
 | `engine` | строка | нет | Имя сканера, если в отчёте его нет |
 | `engine_version` | строка | нет | Версия сканера |
 | `commit_id` | строка | нет | Идентификатор ревизии |
+| `pr_number` | строка | нет | Номер запроса на слияние |
 | `verify_fixes` | булево | нет | Пометить отчёт как пригодный для автоматического закрытия исправленных находок |
 
-Заголовок `X-Commit-Id` — альтернатива полю `commit_id`.
+Заголовки `X-Commit-Id` и `X-PR-Number` — альтернатива полям `commit_id` и
+`pr_number`; оба значения принимаются и параметром запроса.
 
 Ответ — `202 Accepted`:
 
@@ -129,9 +132,12 @@ Content-Type: multipart/form-data
 
     Код `202` означает «отчёт принят и поставлен в очередь», а не «отчёт
     разобран». Счётчиков найденного в ответе нет. Ошибки разбора возникают
-    позже: узнать итог можно, запросив состояние отчёта по
-    `GET /api/v1/reports/<report_id>` — оно перейдёт из `pending` в
-    `completed` либо в `failed`.
+    позже: узнать итог можно по `GET /api/v1/reports/<report_id>/summary` —
+    этот адрес принимает и ключ с правом `upload_report`, и пользовательский
+    токен (`GET /api/v1/reports/<report_id>` — только токен). Состояние
+    `status` перейдёт из `pending` через `processing` в `completed` либо в
+    `failed`; в сводке также есть `findings_count`, `new_findings_count` и
+    `new_by_severity`.
 
 Пример:
 
@@ -151,11 +157,13 @@ curl -X POST "https://hub.example.com/api/v1/products/$PRODUCT_ID/reports" \
 адресу репозитория.
 
 ```
-GET /api/v1/products/lookup?repository_url=<адрес>
+GET /api/v1/products/lookup?repo_url=<адрес>
 X-API-Key: <ключ>
 ```
 
-Требует права `list_products`.
+Доступен только по ключу сервисного аккаунта и требует права `list_products`,
+выданного на общем уровне. Ответ — `product_id`, `product_name` и
+`project_id`; если продукта с таким адресом нет — `404`.
 
 ## Чтение находок
 
@@ -167,7 +175,9 @@ GET /api/v1/products/<product_id>/findings
 критичности, сканеру и другим полям. Точный перечень параметров смотрите в
 Swagger UI: он меняется чаще, чем эта страница.
 
-Требует права `read_findings`.
+Этот адрес доступен только по пользовательскому токену. По ключу с правом
+`read_findings` используйте `GET /api/v1/findings?product_id=<product_id>` —
+выдача ограничена продуктами, доступными ключу.
 
 ## Периметр сканирования
 
@@ -239,7 +249,7 @@ POST /api/v1/findings/<id>/rescan?via=scanner|llm
 
 | Метод и путь | Назначение |
 | --- | --- |
-| `GET /api/v1/sla/violations` | Открытые нарушения сроков |
+| `GET /api/v1/sla/violations` | Нарушения сроков; параметр `resolved` (`true`, `false`), без него — все |
 | `POST /api/v1/sla/violations/<id>/resolve` | Закрыть нарушение |
 | `GET /api/v1/dashboard/sla-compliance` | Сводка соблюдения сроков |
 | `GET /api/v1/dashboard/sla-trend` | Динамика |
@@ -251,9 +261,11 @@ POST /api/v1/products/<id>/findings
 ```
 
 Заводит находку без SARIF — для результатов ручного тестирования и систем, не
-умеющих отдавать отчёт. Требует права `upload_report`. Поля: заголовок,
-критичность, описание, узел или путь, идентификатор правила, название
-«сканера». Повторный ввод той же находки дубля не создаёт.
+умеющих отдавать отчёт. Требует права `upload_report`. Поля: `title`,
+`severity`, `description`, `engine` (название «сканера»), `rule_id`,
+`file_path`, `host`, `ip`, `cve`. Повторный ввод той же находки дубля не
+создаёт: существующая находка обновляется, а в ответе `created` равно
+`false`.
 
 ## Задачи во внешнем трекере
 
@@ -276,7 +288,7 @@ POST /api/v1/products/<id>/findings
 
 | Метод и путь | Назначение |
 | --- | --- |
-| `POST`/`DELETE /api/v1/findings/<id>/tags` | Ручные теги находки |
+| `POST`/`PUT /api/v1/findings/<id>/tags`, `DELETE /api/v1/findings/<id>/tags/<tag>` | Ручные теги находки: добавить, заменить набор, снять |
 | `POST /api/v1/findings/bulk-tags` | Теги на выборку находок |
 | `POST /api/v1/findings/<id>/enrich-tags/<plugin_id>` | Ручное обогащение плагином |
 | `GET`/`POST /api/v1/projects/<id>/suppression-rules` | Правила подавления |
@@ -306,8 +318,13 @@ POST /api/v1/products/<id>/findings
 | `GET /api/v1/grafana/projects/stats` | Показатели по проектам |
 | `GET /api/v1/grafana/products/stats` | Показатели по продуктам |
 | `GET /api/v1/grafana/sla/metrics` | Показатели по срокам |
+| `GET /api/v1/grafana/findings/summary`, `…/timeline`, `…/top` | Сводка, динамика и самые частые находки |
 
-Требуют права `read_metrics`, которое выдаётся только на общем уровне.
+Доступны только по токену (`Authorization: Bearer`); выдача ограничена
+продуктами, доступными владельцу токена. Ключ сервисного аккаунта эти адреса
+не принимает — для чтения показателей по ключу служат `GET
+/api/v1/dashboard/*` с правом `read_metrics`, которое выдаётся только на
+общем уровне.
 
 ## Вход и токены
 
@@ -369,14 +386,20 @@ POST /api/v1/products/<id>/findings
 | Метод и путь | Право |
 | --- | --- |
 | `POST /api/v1/products/<id>/reports` | `upload_report` |
+| `GET /api/v1/reports/<id>/summary` | `upload_report` |
 | `POST /api/v1/products/<id>/findings` | `upload_report` — ручной ввод находки без SARIF |
+| `PATCH /api/v1/products/<id>/iac-scan-state` | `upload_report` |
 | `GET /api/v1/findings`, `GET /api/v1/findings/<id>` | `read_findings` |
 | `PATCH /api/v1/findings/<id>` | `write_findings` |
 | `GET /api/v1/sla/violations` | `read_findings` |
 | `GET /api/v1/dashboard/*` | `read_metrics` |
-| `GET /api/v1/products/lookup`, `GET /api/v1/products/scan-enabled` | `list_products` |
+| `GET /api/v1/products/lookup`, `GET /api/v1/products/scan-enabled` | `list_products` на общем уровне |
+| `GET /api/v1/projects`, `GET /api/v1/products`, `GET /api/v1/projects/<id>/products` | отдельного права не требуют; выдача ограничена проектами и продуктами, на которые ключу выданы права |
 | `POST /api/v1/projects`, `POST /api/v1/projects/<id>/products` | `create_project`, `create_product` |
 | `PUT`/`DELETE /api/v1/products/<id>` | `update_product`, `delete_product` |
+| `/api/v1/projects/<id>/scope/*` | см. [Периметр сканирования](#периметр-сканирования) |
+| `GET /api/v1/projects/<id>/plugin-channels`, `GET …/<plugin_id>/config` | любое право на проект |
+| `PUT /api/v1/projects/<id>/plugin-channels/<plugin_id>/config` | `manage_notifications` |
 
 Остальные маршруты — включая экспорт, массовые операции и заведение задач —
 доступны только по пользовательскому токену. Тем же разделением живёт

@@ -1,7 +1,7 @@
 # Быстрый старт на k3s
 
 Репозиторий с документацией включает **готовые Helm-чарты** всех компонентов и
-**интерактивный установщик** — от голой Linux-VM до рабочего Security Hub.
+**установщик** `install.sh` — от голой Linux-VM до рабочего Security Hub.
 
 ## Что в репозитории
 
@@ -14,8 +14,9 @@
 ## Предварительные требования
 
 - Linux-нода (Ubuntu 22.04/24.04, Debian 12 — проверено), root/sudo.
-- 4 vCPU / 8 ГБ RAM / 60 ГБ диска: ставятся Hub, DomainScope и OWASP ZAP, OpenVAS выключен
-  (с ним — ещё 2 vCPU, 8 ГБ и 40 ГБ; см. [Расчёт ресурсов](sizing.md)).
+- 4 vCPU / 8 ГБ RAM / 60 ГБ диска: с `values-poc.yaml` ставятся Hub, DomainScope и
+  OWASP ZAP, OpenVAS выключен. Без этого overlay umbrella ставит и OpenVAS — тогда
+  нужно ещё 2 vCPU, 8 ГБ и 40 ГБ; см. [Расчёт ресурсов](sizing.md).
 - Исходящий доступ в интернет (для образов и сканирования целей).
 
 ### ⚠ ARM-нода (Apple Silicon, Ampere, Raspberry Pi и т.п.)
@@ -67,12 +68,12 @@ sudo ./install.sh \
 
 1. Ставит k3s (если ещё нет) + Traefik ingress.
 2. Чинит CoreDNS, если нода на systemd-resolved (иначе поды не резолвят домены).
-3. Ставит helm (если нет). При `--tls disabled` cert-manager не нужен.
-4. `helm install hub charts/hub-platform` с overlay `values-poc.yaml`.
+3. Ставит helm (если нет). При `--tls disabled` cert-manager не ставится.
+4. `helm dependency update` и `helm upgrade --install hub charts/hub-platform` с overlay `values-poc.yaml`.
 
 > Первый старт DomainScope занимает несколько минут: init-контейнер скачивает
 > ~13000 nuclei-шаблонов (под эмуляцией на ARM — дольше). Пока статус
-> `Init:0/1` — это нормально.
+> `Init:2/3` — это нормально.
 
 ### DNS для сканирования
 
@@ -124,7 +125,10 @@ kubectl -n hub get pods                       # все поды должны с�
 kubectl -n hub logs -f deploy/hub-domainscope-domainscope -c domainscope
 ```
 
-В логе появятся `scanning ip` и `open port`, затем `sarif report uploaded`.
+В логе появятся `hub scope targets loaded` и `port scan cycle started`, затем
+`sarif delivery` с числом отчитанных хостов (`hosts_reported`) и находок
+(`total_findings`). Построчные `scanning ip` и `open port` пишутся только при
+уровне `LOG_LEVEL=debug`.
 Найденные открытые порты example.com появятся в Hub UI в продукте `example.com`
 (раздел Findings). Скан под эмуляцией идёт медленнее — первые находки могут
 занять несколько минут (discovery + connect-скан).
@@ -138,12 +142,28 @@ WireGuard на отдельной VPS, собственные секреты) �
 
 ## Фиксация версии
 
-Образы `dexionius/*` публикуются с версионными тегами. Чтобы запинить версию
-задайте в значениях чарта явный тег вместо `latest`:
+Образы `dexionius/*` публикуются с версионными тегами, и чарты уже закрепляют
+их: Hub — `0.33`, DomainScope — `0.34`. Чтобы сменить версию, задайте тег в
+значениях umbrella-чарта:
 
 ```yaml
-image:
-  tag: "0.33"
+hub:
+  backend:
+    backend:
+      image:
+        tag: "0.33"
+  worker:
+    worker:
+      image:
+        tag: "0.33"
+  frontend:
+    frontend:
+      image:
+        tag: "0.33"
+domainscope:
+  domainscope:
+    image:
+      tag: "0.34"
 ```
 
 

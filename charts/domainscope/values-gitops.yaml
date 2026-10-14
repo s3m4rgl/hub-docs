@@ -15,7 +15,7 @@ domainscope:
     openvasEnabled: "true"
     openvasHost: "openvas-gvmd.openvas"
     netboxEnabled: "true"
-    netboxApiEndpoint: "http://netbox.netbox:8080/netbox/api"
+    netboxApiEndpoint: "http://netbox.netbox:8080/netbox"   # корень NetBox: клиент сам дописывает /api/...
 
 wireguard:
   enabled: true

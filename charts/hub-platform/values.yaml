@@ -230,7 +230,7 @@ openvas:
   tls:
     mode: selfsigned
   feedInit:
-    enabled: true                        # ⚠ первая синхронизация 1–3 ч, ~5 ГБ
+    enabled: true                        # только показывает подсказку про фиды в NOTES; init-контейнеры фидов работают всегда (~5 ГБ)
 
 zap:
   enabled: true

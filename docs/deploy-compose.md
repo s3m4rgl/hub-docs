@@ -1,6 +1,6 @@
 # Развёртывание через Docker Compose
 
-Самый быстрый путь к работающему Hub. Подходит для пилотов, dev-стендов и продакшен-инсталляций без Kubernetes.
+Самый быстрый путь к работающему Hub. Подходит для пилотов и dev-стендов. Поставляемый `docker-compose.yml` рассчитан на ознакомление: в нём зафиксированы `APP_ENV=development` и `AUTH_MODE=LOCAL`, а загруженные отчёты хранятся внутри контейнера. Для промышленной эксплуатации используйте [Kubernetes / Helm](deploy-kubernetes.md) или доработайте compose-файл под себя.
 
 > Поставка — готовые Docker-образы из публичного registry. Сборка из исходников не предполагается.
 
@@ -19,12 +19,13 @@
 | -------------------- | -------------------------------------- |
 | `docker-compose.yml` | Compose-стек со ссылками на образы Hub |
 | `.env.example`       | Шаблон конфигурации                    |
+| `bootstrap/`         | Скрипт одноразовой инициализации и точка входа DomainScope (монтируются в контейнеры) |
 
 Положите файлы в любую рабочую директорию, например `/opt/hub/`:
 
 ```bash
 sudo mkdir -p /opt/hub
-sudo cp docker-compose.yml .env.example /opt/hub/
+sudo cp -r docker-compose.yml .env.example bootstrap /opt/hub/
 cd /opt/hub
 ```
 
@@ -48,15 +49,15 @@ FRONTEND_URL=https://hub.example.com
 REACT_APP_API_URL=https://hub.example.com
 ALLOWED_ORIGINS=https://hub.example.com
 
-# === Auth mode ===
-AUTH_MODE=LOCAL
+# === Пароль первого администратора ===
 LOCAL_ADMIN_PASSWORD=<strong-admin-password>
-
-# === App env ===
-APP_ENV=production
 ```
 
-> **WARNING:** дефолтные значения `JWT_SECRET` и `LOCAL_ADMIN_PASSWORD` из шаблона **не использовать в продакшене** — задайте свои случайные значения.
+`AUTH_MODE` и `APP_ENV` в `docker-compose.yml` заданы значениями (`LOCAL` и
+`development`), а не подстановкой из `.env`, — строки в `.env` на них не
+влияют. Чтобы сменить, правьте сам `docker-compose.yml`.
+
+> **WARNING:** дефолтные значения `JWT_SECRET`, `DB_PASSWORD`, `DS_DB_PASSWORD` и `LOCAL_ADMIN_PASSWORD` из шаблона **не использовать в продакшене** — задайте свои случайные значения.
 
 Полный справочник переменных: [Конфигурация: обзор и соглашения](configuration.md).
 
@@ -70,13 +71,13 @@ docker compose up -d
 docker compose restart backend
 ```
 
-Версия образов задаётся переменными `HUB_VERSION` (backend, worker, frontend) и `DS_VERSION` (DomainScope) в файле `.env`. По умолчанию обе — `0.33`. Совпадение версий не гарантировано: компоненты выпускаются независимо, и тег, существующий у Hub, может отсутствовать у DomainScope — тогда сервис получает `ImagePullBackOff` уже после старта остальных. Перед сменой версии убедитесь, что нужный тег существует у каждого компонента: см. [Обновления](upgrades.md#выбор-версии).
+Версия образов задаётся переменными `HUB_VERSION` (backend, worker, frontend) и `DS_VERSION` (DomainScope) в файле `.env`. По умолчанию обе — `0.33`. Совпадение версий не гарантировано: компоненты выпускаются независимо, и тег, существующий у Hub, может отсутствовать у DomainScope — тогда `docker compose pull` (или `up`) завершается ошибкой `manifest unknown` для этого образа. Перед сменой версии убедитесь, что нужный тег существует у каждого компонента: см. [Обновления](upgrades.md#выбор-версии).
 
 Стек поднимает (компоненты):
 
 | Сервис        | Назначение                          | Образ (Docker Hub)                        | Порт хоста |
 | ------------- | ----------------------------------- | ----------------------------------------- | ---------- |
-| `postgres`    | БД Hub (PostgreSQL 15)              | `postgres:15`                             | 5432       |
+| `postgres`    | БД Hub (PostgreSQL 15)              | `postgres:15`                             | —          |
 | `backend`     | REST API                            | `dexionius/sshub-backend:${HUB_VERSION}`  | 8082       |
 | `worker`      | Async jobs                          | `dexionius/sshub-worker:${HUB_VERSION}`   | —          |
 | `frontend`    | Web UI                              | `dexionius/sshub-frontend:${HUB_VERSION}` | 3000       |
@@ -205,6 +206,7 @@ curl http://localhost:8082/version
 | БД Hub                    | docker volume `postgres_data`    |
 | БД DomainScope (опц.)     | docker volume `ds_postgres_data` |
 | Токен сканера (bootstrap) | docker volume `scanner_shared`   |
+| Загруженные отчёты, логи backend и worker | `/tmp/sshub/` внутри контейнера — **не сохраняются** при пересоздании; для персистентности смонтируйте том на `STORAGE_PATH` |
 
 Backup БД:
 

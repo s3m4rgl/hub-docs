@@ -17,7 +17,7 @@
 | **B. Production** | Реальные сканы внешних целей | 2 (Hub + WG-VPS) | ~15 мин + 10–30 мин на feed init |
 
 **Если надо сканировать из "внешнего" адреса свой периметр — идите по пути B сразу.** Включить WG поверх
-существующей evaluation-инсталляции тоже можно (`helm upgrade --wg-values …`),
+существующей evaluation-инсталляции тоже можно (`./install.sh … --wg-values …`),
 но проще сделать всё с нуля правильно, чем потом мигрировать пароли и PVC.
 
 ## Требования
@@ -25,7 +25,9 @@
 **Hub-нода** (один сервер):
 
 - Linux (Ubuntu 22.04+, Debian 12+, RHEL/Rocky 9+).
-- 4 vCPU, 8 GB RAM, 30 GB диска минимум (8 vCPU + 16 GB рекомендуется для OpenVAS).
+- 6 vCPU, 16 GB RAM, 100 GB диска: установщик по умолчанию ставит и OpenVAS.
+  Без него (`openvas.enabled=false`) — 4 vCPU, 8 GB RAM, 60 GB диска; см.
+  [Расчёт ресурсов](docs/sizing.md).
 - Root-доступ.
 - Outbound-интернет (k3s, helm, контейнерные образы).
 
@@ -71,10 +73,11 @@ sudo ./install.sh \
 Установщик идемпотентен (можно перезапускать). Что делает (~5 минут):
 
 1. Ставит k3s с Traefik.
-2. Ставит helm и cert-manager.
-3. `helm dependency update` для umbrella-чарта.
-4. `helm upgrade --install hub charts/hub-platform` с TLS / domain.
-5. Печатает summary с URL'ами и сгенерированными паролями.
+2. Чинит CoreDNS, если нода на systemd-resolved (флаги `--dns`, `--no-dns-fix`).
+3. Ставит helm и cert-manager.
+4. `helm dependency update` для umbrella-чарта.
+5. `helm upgrade --install hub charts/hub-platform` с TLS / domain.
+6. Печатает summary с URL'ами и сгенерированными паролями.
 
 Переходите к разделу [«Дальше»](#дальше) ниже.
 
@@ -182,7 +185,7 @@ kubectl exec -n hub deploy/hub-domainscope-domainscope -c domainscope -- \
 kubectl exec -n hub hub-zap-0 -- \
     sh -c 'curl -s https://icanhazip.com'
 kubectl exec -n hub deploy/hub-openvas -c gmp-bridge -- \
-    sh -c 'curl -s https://icanhazip.com'
+    sh -c 'wget -qO- https://icanhazip.com'
 ```
 
 Все три должны вернуть public IP WG-сервера.
@@ -223,9 +226,11 @@ kubectl -n hub get secret hub-openvas-secrets \
     -o jsonpath='{.data.adminPassword}' | base64 -d
 ```
 
-В Hub UI создайте проект, добавьте домены в scope — DomainScope подхватит scope
-через `/api/v1/projects/<id>/scope/export` и пойдёт сканировать. Результаты
-будут стримиться в Hub через SARIF upload.
+Установщик уже создал проект по умолчанию (`Default`, продукт `example.com`)
+со scope-заглушкой `example.com`. Замените scope на свои домены — в Hub UI или
+через `helm upgrade … --reuse-values --set global.defaultProject.scope=mycorp.com`.
+DomainScope подхватит scope через `/api/v1/projects/<id>/scope/export` и пойдёт
+сканировать. Результаты будут стримиться в Hub через SARIF upload.
 
 ## Обновление
 
@@ -255,11 +260,11 @@ helm -n hub uninstall hub
 
 - [ ] `--tls letsencrypt` с реальным email
 - [ ] WG egress поднят (путь B) если сканируете третьи стороны
-- [ ] Бэкапы PVC: hub-postgres, hub-openvas-vt-data + gvmd-data
+- [ ] Бэкапы PVC: `hub-postgres-data`, `hub-openvas-pg-data`, `hub-openvas-gvmd-data`
 - [ ] Поменять пароль `admin@localhost.local` сразу после первого входа
 - [ ] (опц.) `--ingress nginx` если нужны его расширенные фичи
-- [ ] (опц.) `AUTH_MODE=SSO` + Keycloak, Azure AD (Entra ID) или любой OIDC-провайдер (`SSO_PROVIDERS`, `OIDC_<NAME>_*`) — см. [06-integration-keycloak.md](docs/06-integration-keycloak.md)
-- [ ] (опц.) Внешний managed PostgreSQL вместо in-cluster (`hub.postgres.enabled=false` + DSN в secrets)
+- [ ] (опц.) `AUTH_MODE=SSO` + Keycloak, Azure AD (Entra ID) или любой OIDC-провайдер (`SSO_PROVIDERS`, `OIDC_<NAME>_*`) — см. [integration-sso.md](docs/integration-sso.md)
+- [ ] (опц.) Внешний managed PostgreSQL вместо in-cluster (`hub.postgres.enabled=false` + адрес в `hub.backend.backend.env.dbHost`, при необходимости `dbPort`/`dbName`/`dbUser`; пароль — `secrets.hubDbPassword`)
 
 ## Диагностика проблем
 
@@ -286,7 +291,7 @@ kubectl -n hub describe pod <pod-name>
 
 - `kubectl logs <pod> -c wg-setup` — обычно peer не зарегистрирован на сервере
   (фаза B.3) или `WG_NETWORK` пересекается с k3s pod-CIDR (10.42.0.0/16).
-  Подробнее — [scripts/wg/README.md#troubleshooting](scripts/wg/README.md#troubleshooting).
+  Подробнее — [scripts/wg/README.md](scripts/wg/README.md#диагностика-проблем).
 
 **WG: handshake не идёт:**
 

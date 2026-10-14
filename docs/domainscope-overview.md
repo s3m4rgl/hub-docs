@@ -8,7 +8,7 @@
 2. **Port scan** — nmap по обнаруженным IP, fingerprinting сервисов
 3. **Nuclei HTTP** — vulnerability templates по HTTP/HTTPS эндпоинтам
 4. **OpenVAS** (опц.) — CVE-сканирование (Greenbone Community Edition)
-5. **TLSX** — анализ TLS-сертификатов (expiry, weak ciphers)
+5. **TLSX** — анализ TLS: истёкшие и истекающие сертификаты, самоподписанные, TLS 1.0/1.1
 6. **OWASP ZAP** (опц.) — активный DAST против найденных web-приложений
 7. **NetBox sync** — импорт целей из NetBox IPAM (только без Hub), запись адресов цикла обратно в IPAM, опционально экспорт доменов в NetBox DNS
 
@@ -161,7 +161,11 @@ Hub получает результаты как обычные SARIF-отчёт
 ```ini
 DOMAINSCOPE_DOMAINS=example.com,subsidiary.com
 DOMAINSCOPE_NETBOX_ENABLED=false
+DOMAINSCOPE_SARIF_ENABLED=true             # без него AUTO_UPLOAD ничего не делает
 DOMAINSCOPE_SARIF_AUTO_UPLOAD=true
+DOMAINSCOPE_SARIF_API_ENDPOINT=https://hub.example.com
+DOMAINSCOPE_SARIF_API_TOKEN=<...>
+DOMAINSCOPE_SARIF_PRODUCT_ID=<uuid-продукта>
 ```
 
 Без Hub (`DOMAINSCOPE_HUB_ENABLED` не задан) предложений нет: все найденные
@@ -193,9 +197,11 @@ DomainScope экспонирует HTTP эндпоинты (если `DOMAINSCOP
 | Эндпоинт      | Что                                                 |
 | ------------- | --------------------------------------------------- |
 | `GET /health` | Liveness — всегда 200 если процесс жив              |
-| `GET /ready`  | Readiness — 200 если БД доступна и нет stuck циклов |
+| `GET /ready`  | Readiness — 200, если БД доступна, а discovery, port scan и включённые Nuclei и ZAP завершались не дольше двух своих интервалов назад; до первого завершения — 503 |
 
-Для k8s используется в `livenessProbe`/`readinessProbe`.
+Эндпоинты рассчитаны на `livenessProbe`/`readinessProbe`, но Helm-чарт
+`charts/domainscope` их не использует: health-сервер в нём не включён, а
+liveness-проба проверяет процесс через `pgrep`.
 
 ## Связанные документы
 

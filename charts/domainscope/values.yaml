@@ -82,7 +82,7 @@ domainscope:
     zapAjaxSpiderTimeout: "300"
     zapRescanPeriod: "86400"
     # Тайминги
-    timeLoop: "7200"
+    timeLoop: "7200"        # запасное значение: действует, только если интервал цикла равен 0
     # Интервалы циклов, сек. Пусто → дефолты бинаря (discovery 21600 = 6ч,
     # portscan 7200 = 2ч). Для ознакомления переопределяются в values-poc.yaml.
     timeLoopDiscovery: ""

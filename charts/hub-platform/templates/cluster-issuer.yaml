@@ -3,7 +3,8 @@ Cluster-scoped cert-manager Issuers used by all subcharts' ingresses.
 - selfsigned-cluster-issuer: works air-gapped, browsers will warn
 - letsencrypt-prod: ACME HTTP-01 (requires public DNS + reachable :80)
 
-Operator sets .Values.tls.mode in the umbrella; subcharts inherit it.
+Operator sets .Values.tls.mode in the umbrella. Subcharts do NOT inherit it:
+each subchart reads its own <alias>.tls.mode (see values.yaml).
 
 Skipped if cert-manager CRDs aren't installed yet (operator runs install.sh first).
 */}}

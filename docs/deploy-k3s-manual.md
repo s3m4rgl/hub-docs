@@ -90,7 +90,7 @@ helm version --short
 helm repo add jetstack https://charts.jetstack.io && helm repo update
 helm upgrade --install cert-manager jetstack/cert-manager \
   --namespace cert-manager --create-namespace \
-  --set crds.enabled=true --wait --timeout=8m
+  --set installCRDs=true --wait --timeout=5m
 ```
 
 ## 5. Установка hub-platform
@@ -106,6 +106,7 @@ helm dependency update charts/hub-platform
 # scope example.com, TLS off, OpenVAS off)
 helm upgrade --install hub charts/hub-platform \
   --namespace hub --create-namespace \
+  --timeout 15m \
   --set global.domain=hub.poc.local \
   --set domain=hub.poc.local \
   --set tls.mode=disabled \
@@ -113,6 +114,10 @@ helm upgrade --install hub charts/hub-platform \
   --set zap.tls.mode=disabled \
   -f charts/hub-platform/values-poc.yaml
 ```
+
+> `--timeout 15m` нужен post-install Job'у, который ждёт окончания миграций
+> backend: пяти минут по умолчанию на медленном старте (эмуляция на ARM,
+> холодная загрузка образов) не хватает.
 
 > Для production не используйте `values-poc.yaml` (там публичные секреты).
 > Соберите свой `values.yaml` без блока `secrets:` (umbrella сгенерирует
@@ -136,47 +141,52 @@ echo "<NODE_IP> hub.poc.local" | sudo tee -a /etc/hosts
 ```bash
 kubectl -n hub get pods                       # дождитесь Running (первый старт
                                               # DomainScope тянет ~13000 nuclei-
-                                              # шаблонов — статус Init:0/1 это норма)
+                                              # шаблонов — статус Init:2/3 это норма)
 kubectl -n hub logs -f deploy/hub-domainscope-domainscope -c domainscope
 ```
 
-В логе появятся `scanning ip` → `open port` → `sarif report uploaded`. Найденные
+В логе появятся `hub scope targets loaded` → `port scan cycle started` →
+`sarif delivery` (поля `hosts_reported`, `total_findings`); построчные
+`scanning ip` и `open port` видны только при `LOG_LEVEL=debug`. Найденные
 открытые порты example.com — в Hub UI, продукт `example.com`, раздел Findings.
 
 ## Соответствие шагов и установщика
 
 | Шаг | Что делает `install.sh` |
 | --- | --- |
-| 1. k3s | Ставит сам, если ещё не установлен. Отдельного флага для пропуска нет |
+| 1. k3s | Ставит сам, если ещё не установлен; пропускается флагом `--skip-k3s` |
 | 2. Исправление DNS | Делает сам. Резолверы задаются флагом `--dns "<ip> [ip…]"`, отключается флагом `--no-dns-fix` |
 | 3. helm | Ставит сам |
 | 4. cert-manager | Ставит по значению `--tls`; пропускается флагом `--skip-cert-manager` |
-| 5. hub-platform | Разворачивает с учётом `--domain`, `--tls`, `--values`, `--ingress`, `--release` |
+| 5. hub-platform | Разворачивает с учётом `--domain`, `--tls`, `--values`, `--ingress`, `--release`, `--namespace` |
 
 ### Все флаги установщика
 
 | Флаг | Назначение |
 | --- | --- |
 | `--domain <имя>` | Публичное имя хоста, по которому открывается Hub |
-| `--tls <режим>` | `disabled`, `selfsigned` или `letsencrypt` |
+| `--tls <режим>` | `disabled`, `selfsigned`, `letsencrypt` или `existing` (свой Secret с сертификатом; cert-manager не ставится) |
 | `--le-email <адрес>` | Обязателен при `--tls letsencrypt` — без него установщик прерывается |
 | `--ingress <класс>` | Контроллер входящего трафика: Traefik идёт с k3s, nginx ставится отдельно |
-| `--values <файл>` | Дополнительный файл значений. Флаг повторяемый; применяется **до** внутренних переопределений |
+| `--values <файл>`, `-f <файл>` | Дополнительный файл значений. Флаг повторяемый; внутренние `--set` установщика (домен, TLS, ingress) имеют приоритет над ним |
 | `--wg-values <файл>` | Значения для egress через WireGuard |
-| `--release <имя>` | Имя релиза Helm |
+| `--release <имя>` | Имя релиза Helm (по умолчанию `hub`) |
+| `--namespace <имя>`, `-n <имя>` | Namespace (по умолчанию `hub`) |
 | `--dns "<ip> [ip…]"` | Резолверы для CoreDNS. По умолчанию `1.1.1.1 8.8.8.8`; задайте свои, если сканируете внутреннюю инфраструктуру |
 | `--no-dns-fix` | Не трогать CoreDNS — если DNS в кластере уже настроен |
+| `--skip-k3s` | Не ставить k3s — использовать уже настроенный кластер (`KUBECONFIG`) |
 | `--skip-cert-manager` | Не ставить cert-manager |
 | `--help` | Справка |
 
 Те же значения можно передать переменными окружения: `DOMAIN`, `TLS_MODE`,
 `LE_EMAIL`, `INGRESS_CLASS`, `RELEASE`, `NAMESPACE`, `WG_VALUES`,
-`DNS_UPSTREAMS`, `DNS_FIX`.
+`DNS_UPSTREAMS`, `DNS_FIX`, `SKIP_K3S`, `SKIP_CERT_MANAGER`; таймаут
+`helm` — `HELM_TIMEOUT` (по умолчанию `15m`).
 
 Примеры:
 
 ```bash
-sudo ./install.sh --domain hub.example.com --tls letsencrypt --le-email admin@example.com
+sudo ./install.sh --domain hub.example.com --tls letsencrypt --le-email <ваш-email>   # admin@example.com установщик отвергает как заглушку
 sudo ./install.sh --ingress nginx --tls selfsigned
 sudo ./install.sh --domain hub.poc.local --values charts/hub-platform/values-poc.yaml
 sudo ./install.sh --dns "10.0.0.53 10.0.0.54"

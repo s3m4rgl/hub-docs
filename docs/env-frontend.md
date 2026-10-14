@@ -1,12 +1,12 @@
 # Переменные окружения: frontend
 
-Клиентские переменные имеют префикс `REACT_APP_`. Они запекаются плейсхолдерами в JS-бандл на этапе сборки и подменяются на реальные значения **на старте контейнера** скриптом `entrypoint.sh` (через `sed` по `static/js/*.js`). В Helm задаются через `frontend.frontend.env.*`.
+Клиентские переменные имеют префикс `REACT_APP_`. Они запекаются плейсхолдерами в JS-бандл на этапе сборки и подменяются на реальные значения **на старте контейнера** скриптом `entrypoint.sh` (через `sed` по `static/js/*.js`). В Helm задаются через `frontend.frontend.env.*`: `apiUrl` → `REACT_APP_API_URL`, `netboxUrl` → `REACT_APP_NETBOX_BASE_URL`; `REACT_APP_APP_ENV` чарт не задаёт.
 
 | Переменная | Назначение | Значения | По умолчанию | Обязательна |
 |---|---|---|---|---|
 | `REACT_APP_API_URL` | Базовый URL backend API. Используется и для API-вызовов, и для запроса `/api/v1/auth/config` (определение LOCAL/SSO) | URL `http(s)://host[:port]` | `http://localhost:8082` [code] / `https://hub.example.com` [chart] | Да (в проде) |
-| `REACT_APP_NETBOX_BASE_URL` | Если задан — IP в карточке находка'а становятся ссылками на поиск в NetBox (`${URL}/search/?q=${ip}`) | URL или пусто | `""` | Нет |
-| `REACT_APP_APP_ENV` | Окружение. `development` показывает dev-баннер и кнопку dev-логина; `production` их скрывает | `development` \| `production` | `production` (entrypoint fallback); `development` (.env.example) | Нет |
+| `REACT_APP_NETBOX_BASE_URL` | Если задан — IP в карточке находки становятся ссылками на поиск в NetBox (`${URL}/search/?q=${ip}`) | URL или пусто | `""` | Нет |
+| `REACT_APP_APP_ENV` | Окружение. `production` скрывает dev-баннер и кнопку dev-логина; любое другое значение их показывает | `development` \| `production` | `production` в контейнере (fallback `entrypoint.sh`); `development` при локальной сборке без переменной | Нет |
 
 ## Настроек провайдера входа у интерфейса нет
 
@@ -25,7 +25,7 @@ backend (`KEYCLOAK_*`, `OIDC_<ИМЯ>_*`) — см. [переменные Hub](e
 
 Из этого следует контракт, который легко нарушить:
 
-- `REACT_APP_API_URL` **должен совпадать по схеме (http/https) с тем, как реально открывается Hub**. Если страница открыта по `http://`, а `REACT_APP_API_URL` указывает на `https://` (или наоборот), запрос `/api/v1/auth/config` падает (mixed-content / CORS) → фронт уходит в `catch` → **fallback на экран SSO** вместо локального логина.
+- `REACT_APP_API_URL` **должен совпадать по схеме (http/https) с тем, как реально открывается Hub**. Если страница открыта по `http://`, а `REACT_APP_API_URL` указывает на `https://` (или наоборот), запрос `/api/v1/auth/config` падает (mixed-content / CORS) → после нескольких повторов вместо формы локального входа показывается **«Вход через SSO временно недоступен»** с кнопкой «Повторить».
 - При TLS-режиме `disabled` (Hub по HTTP) задавайте `REACT_APP_API_URL: http://<domain>`. При `selfsigned`/`letsencrypt` — `https://<domain>`.
 
 > Чарт-дефолты (`hub.example.com`) — плейсхолдеры, обязательны к переопределению в проде.

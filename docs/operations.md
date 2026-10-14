@@ -8,7 +8,7 @@
 | -------------------------------- | ---------------------- | ---------------------------------- |
 | PostgreSQL (Hub)                 | volume `postgres_data` | CRITICAL — основная БД             |
 | PostgreSQL (DomainScope)         | свой volume            | HIGH — теряем discovery            |
-| `./storage/` (артефакты, отчёты) | bind mount             | MEDIUM — можно перезалить          |
+| Хранилище отчётов (`STORAGE_PATH`) | том backend (в Kubernetes — PVC `…-backend-storage`); в поставляемом `docker-compose.yml` хранилище внутри контейнера и эфемерно | MEDIUM — можно перезалить          |
 | Helm secrets / Vault             | внешнее хранилище      | CRITICAL — без них Hub не стартует |
 | Конфиги (`.env`, `values.yaml`)  | git                    | LOW — версионируются               |
 
@@ -34,7 +34,8 @@ docker exec sshub-postgres pg_dump -U securityhub securityhub | \
 docker exec ds-postgres pg_dump -U domainscope domainscope | \
   gzip > "$BACKUP_DIR/ds-$DATE.sql.gz"
 
-# Storage (отчёты)
+# Storage (отчёты) — только если для STORAGE_PATH смонтирован отдельный том;
+# путь на хосте подставьте свой
 tar -czf "$BACKUP_DIR/storage-$DATE.tar.gz" /opt/hub/storage/
 
 # Очистка старых (>30 дней)
@@ -71,7 +72,7 @@ spec:
               - |
                 pg_dump -h hub-postgres -U $POSTGRES_USER $POSTGRES_DB | gzip > /backup/hub-$(date +%F).sql.gz
             volumeMounts:
-              - name: backup, mountPath: /backup
+              - { name: backup, mountPath: /backup }
           volumes:
             - name: backup
               persistentVolumeClaim: { claimName: backup-pvc }
@@ -119,7 +120,8 @@ blackbox-exporter и любых аналогов.
 
 !!! note "У worker нет собственного адреса проверки"
 
-    Worker не обслуживает HTTP. Его состояние оценивается косвенно — по тому,
+    Worker не обслуживает API: из HTTP у него только порт метрик. Его
+    состояние оценивается косвенно — по тому,
     разбирается ли очередь задач (см. ниже), и по журналу процесса. Живой
     процесс с неразбираемой очередью выглядит здоровым для оркестратора, но
     таковым не является.
@@ -148,7 +150,7 @@ kubectl -n hub port-forward deploy/hub-backend 9090:9090
 Реестр у каждого процесса свой: worker считает свои задания сам, и без
 собственного порта его счётчики читать было бы негде.
 
-Что публикуется:
+Основные ряды (полный перечень — в выводе `/metrics`):
 
 | Метрика | Тип | Про что |
 | --- | --- | --- |
@@ -191,8 +193,9 @@ kubectl -n hub port-forward deploy/hub-backend 9090:9090
 | `OTEL_TRACES_SAMPLER_ARG` | Доля трейсов, начинаемых здесь. Решение вышестоящего сервиса сохраняется |
 
 Схема адреса решает транспорт: `http://` — без TLS, `https://` — с TLS. Адрес
-без схемы роняет старт — это заметнее, чем экспортёр, который молча уходит в
-тайм-аут.
+без схемы или с другой схемой не принимается: процесс стартует, но экспорт не
+запускается, а в журнал пишется ошибка `Trace export not started` — это
+заметнее, чем экспортёр, который молча уходит в тайм-аут.
 
 ### Очередь задач — главный показатель
 
@@ -279,40 +282,39 @@ env:
 ```json
 {
   "level": "info",
-  "ts": "2026-06-02T12:34:56.789Z",
-  "msg": "report uploaded",
-  "report_id": "rpt-...",
-  "engine": "gosec",
-  "findings_count": 47,
-  "user_id": "user-...",
-  "trace_id": "abc..."
+  "timestamp": "2026-06-02T12:34:56.789Z",
+  "msg": "SARIF report queued",
+  "report_id": "…",
+  "product_id": "…",
+  "project_id": "…",
+  "job_id": 1234
 }
 ```
+
+В `APP_ENV=development` (так в поставляемом `docker-compose.yml`) журнал
+текстовый, и примеры с `jq` ниже к нему не применимы.
 
 ### Полезные grep'ы
 
 ```bash
-# Все upload-операции
-docker compose logs backend | jq -r 'select(.msg=="report uploaded")'
+# Все поставленные в разбор отчёты
+docker compose logs --no-log-prefix backend | jq -r 'select(.msg=="SARIF report queued")'
 
 # Ошибки за последний час
-docker compose logs --since 1h backend | jq 'select(.level=="error")'
-
-# Кто логинился сегодня
-docker compose logs backend | jq -r 'select(.msg=="user login") | "\(.ts) \(.email)"'
+docker compose logs --no-log-prefix --since 1h backend | jq 'select(.level=="error")'
 ```
 
 ### Логи DomainScope
 
 ```bash
 # Compose
-docker compose -f docker/docker-compose.yml logs -f domain-scope
+docker compose logs -f domainscope
 
 # systemd
 sudo journalctl -u domain-scope -f
 
 # По циклам
-docker compose logs domain-scope | grep "cycle"
+docker compose logs domainscope | grep "cycle"
 ```
 
 ### Retention
@@ -333,7 +335,8 @@ docker compose logs domain-scope | grep "cycle"
 
 Очистка запускается **ежечасно**. Расписание задано в коде и переменными
 окружения не управляется: `CLEANUP_SCHEDULE` — устаревшая переменная, она
-только вызывает предупреждение в журнале, если задана.
+только вызывает предупреждение в журнале, если её значение отличается от
+прежнего умолчания `0 2 * * *`.
 
 Что удаляется:
 
@@ -344,14 +347,17 @@ docker compose logs domain-scope | grep "cycle"
 | Необработанные отчёты | `CLEANUP_RETENTION_PENDING_DAYS` | `0` — не удаляются |
 | Файлы без записи в базе | `CLEANUP_RETENTION_ORPHAN_HOURS` | старше 24 часов |
 
-Удаляются и файл, и запись в базе. Проверить, что именно будет удалено, не
+Удаляются файл отчёта и его содержимое в базе (`raw_data`); сама запись об
+отчёте остаётся. Проверить, что именно будет удалено, не
 удаляя, можно через `CLEANUP_DRY_RUN=true`.
 
 Конфиг — см. [Конфигурация: обзор и соглашения](configuration.md) → `CLEANUP_*`.
 
 ### Refresh tokens
 
-Worker `refresh_token_cleanup` чистит revoked tokens старше `REFRESH_CLEANUP_RETENTION_DAYS=30`.
+Задание `refresh_token_cleanup` раз в сутки удаляет токены обновления, истёкшие
+или отозванные более `REFRESH_CLEANUP_RETENTION_DAYS` суток назад (по
+умолчанию 30).
 
 ### Audit log
 

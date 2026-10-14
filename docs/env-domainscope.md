@@ -2,11 +2,35 @@
 
 Большинство переменных DomainScope имеют префикс `DOMAINSCOPE_` (конфиг агента). Несколько переменных префикса НЕ имеют — это rescan/probe HTTP-сервер, логгер и DNS-резолвер (см. раздел «Без префикса DOMAINSCOPE_» в конце). Приоритет конфигурации: **ENV > YAML (`config-example.yml` / `/etc/domain-scope/settings.yml`) > defaults в `LoadConfig()`**.
 
-- bool принимает `true/false/1/0/yes/no/on/off` (регистронезависимо);
+- bool принимает `true/false/1/0/yes/no/on/off` (регистронезависимо), кроме `DOMAINSCOPE_SCOPE_FAIL_OPEN` и `PROBE_ALLOW_PRIVATE` — у них свои правила, см. таблицы ниже;
 - числа — unsigned int; списки — через запятую;
-- источник истины по дефолтам — `DefaultConfig()` в `internal/pkg/configuration/config.go`.
+- пустая переменная считается незаданной;
+- источник истины по дефолтам — `LoadConfig()` в `internal/pkg/configuration/config.go`.
 
-В Helm задаются через `domainscope.env.*`; переменные без своего ключа в values — списком `domainscope.extraEnv`. Секреты (`DSN`, `*_API_TOKEN`, `*_PASSWORD`, `*_HMAC_SECRET`, `ZAP_*_JSON`) идут через `secretKeyRef`/Vault.
+!!! warning "Большинство переменных разбирается нестрого"
+
+    Неразобранное значение (`DOMAINSCOPE_NUCLEI_CONCURRENCY=abc`,
+    `DOMAINSCOPE_SARIF_ENABLED=da`) молча пропускается, и остаётся значение из
+    YAML или дефолт; сообщения в журнале нет. Для большинства чисел `0` тоже
+    значит «не задано»: явный ноль из ENV принимают только
+    `DOMAINSCOPE_SCANNER_MIN_RATE`, `DOMAINSCOPE_SCANNER_MAX_UNKNOWN_PORTS_PER_IP`
+    и `DOMAINSCOPE_NUCLEI_FP_ROOT_MATCH_THRESHOLD`.
+
+    Строго, с остановкой запуска и именем переменной в ошибке, разбираются
+    только [тонкая настройка nmap](#тонкая-настройка-nmap-034) и JSON в
+    `DOMAINSCOPE_ZAP_INSTANCES_JSON` / `DOMAINSCOPE_ZAP_CREDENTIALS_JSON`.
+    Недопустимые сочетания и значения (тип скана, `ip_scope`, обязательные
+    поля включённых интеграций) ловит проверка конфигурации при старте.
+
+!!! note "Значения, заданные в Docker-образе"
+
+    Образ `dexionius/domain-scope` задаёт `DOMAINSCOPE_FINGERPRINT_TIMEOUT=10`,
+    `DOMAINSCOPE_SARIF_LOCAL_PATH=/var/log/domain-scope/sarif`,
+    `DOMAINSCOPE_TIME_LOOP=3600`, `DOMAINSCOPE_SARIF_SCANNER_NAME=DomainScope` и
+    `DOMAINSCOPE_NUCLEI_TEMPLATES_PATH=/app/nuclei-templates`. В контейнере они
+    перекрывают YAML и дефолты из таблиц ниже.
+
+В Helm задаются через `domainscope.env.*` (в `hub-platform` — `domainscope.domainscope.env.*`); переменные без своего ключа в values — списком `domainscope.extraEnv`. Секреты (`DSN`, `*_API_TOKEN`, `*_PASSWORD`, `*_HMAC_SECRET`, `ZAP_*_JSON`) идут через `secretKeyRef`/Vault.
 
 ## Окружение / общее
 
@@ -22,13 +46,13 @@
 | `DOMAINSCOPE_IGNORED_DOMAINS` | Корневые зоны, всегда игнорируемые (напр. `reg.ru`) | CSV доменов | пусто |
 | `DOMAINSCOPE_TARGET_IPS` | IP для прямого сканирования. Только одиночные адреса: значение с маской (`192.0.2.0/24`) отбрасывается с предупреждением `invalid ip address, skipping` (известное ограничение, [DomainScope#8](https://gitlab.com/hub_infosec/DomainScope/-/work_items/8)) | CSV IP | пусто |
 | `DOMAINSCOPE_TARGET_PORTS` | Порты nmap (`-p`). Нельзя вместе с `DOMAINSCOPE_SCANNER_TOP_PORTS`: заданы оба — ошибка старта | `80,443,1000-2000` (одиночные + диапазоны) | пусто → встроенный набор `Top100Ports` (97 портов); в Helm-чарте — 21 порт из `values.yaml`. Подробно — [Порты сканирования](#порты-сканирования) |
-| `DOMAINSCOPE_FINGERPRINT_TIMEOUT` | Таймаут fingerprinting, сек | uint | `5` |
+| `DOMAINSCOPE_FINGERPRINT_TIMEOUT` | Таймаут fingerprinting, сек | uint | `5` (в Docker-образе — `10`) |
 
 ## Scanner (nmap)
 
 | Переменная | Назначение | Значения | По умолчанию |
 |---|---|---|---|
-| `DOMAINSCOPE_SCANNER_WORKERS` | Число параллельных worker скана | uint | `20` |
+| `DOMAINSCOPE_SCANNER_WORKERS` | Число параллельных worker скана | uint, не больше `100` (больше — ошибка старта) | `20` |
 | `DOMAINSCOPE_SCANNER_MIN_RATE` | nmap `--min-rate`, пакетов/сек | uint, `0` = выкл | `500` |
 | `DOMAINSCOPE_SCANNER_MAX_UNKNOWN_PORTS_PER_IP` | Порог аномалии: ≥N портов `unknown`+пустой fingerprint на одном IP → отбрасываются как scan-артефакт | uint, `0` = фильтр выкл | `20` |
 | `DOMAINSCOPE_SCANNER_SCAN_TYPE` | Тип nmap-скана портов (см. ниже) | `syn` \| `connect` | `syn` |
@@ -55,7 +79,7 @@
 |---|---|---|---|
 | `DOMAINSCOPE_SCANNER_TOP_PORTS` | `--top-ports N` вместо `-p <TARGET_PORTS>` | `1`…`65535`, нельзя вместе с `TARGET_PORTS` | не задано |
 | `DOMAINSCOPE_SCANNER_TIMING_TEMPLATE` | `-T0`…`-T5` | `0`…`5` | `4` |
-| `DOMAINSCOPE_SCANNER_MAX_RATE` | `--max-rate`, пакетов/сек | uint, не меньше `MIN_RATE` | не задано |
+| `DOMAINSCOPE_SCANNER_MAX_RATE` | `--max-rate`, пакетов/сек | uint, не меньше `MIN_RATE` (по умолчанию `500`): меньшее значение — ошибка старта, если не снизить и `MIN_RATE` | не задано |
 | `DOMAINSCOPE_SCANNER_MIN_PARALLELISM` | `--min-parallelism` | uint | не задано |
 | `DOMAINSCOPE_SCANNER_MAX_PARALLELISM` | `--max-parallelism` | uint, не меньше `MIN_PARALLELISM` | не задано |
 | `DOMAINSCOPE_SCANNER_HOST_TIMEOUT` | `--host-timeout` | длительность | не задано |
@@ -201,6 +225,8 @@ top-100 TCP из nmap-services (сверено с nmap 7.99) без портов
       extraEnv:
       - name: DOMAINSCOPE_SCANNER_TIMING_TEMPLATE
         value: "3"
+      - name: DOMAINSCOPE_SCANNER_MIN_RATE    # MAX_RATE не может быть меньше MIN_RATE
+        value: "100"
       - name: DOMAINSCOPE_SCANNER_MAX_RATE
         value: "200"
     ```
@@ -212,7 +238,7 @@ top-100 TCP из nmap-services (сверено с nmap 7.99) без портов
 | Nuclei | Активные находки порт-скана с протоколом `http` или `https` по fingerprint. Исключение — `DOMAINSCOPE_NUCLEI_TARGET_FILE`: тогда цели берутся из файла |
 | ZAP | Те же активные находки `http`/`https` |
 | TLSX | Порты, у которых fingerprint определил TLS-протокол: `https`, `imaps`, `pop3s`, `smtps`, `ldaps` |
-| OpenVAS | Свой port list в gvmd, от `TARGET_PORTS` не зависит: по умолчанию `All TCP ports`; с DomainScope!81 — `DOMAINSCOPE_OPENVAS_PORT_LIST` (UUID или имя существующего листа; не найден — ошибка цикла OpenVAS) |
+| OpenVAS | Свой port list в gvmd, от `TARGET_PORTS` не зависит: по умолчанию `All TCP ports`, иначе — `DOMAINSCOPE_OPENVAS_PORT_LIST` (UUID или имя существующего листа; не найден — ошибка цикла OpenVAS) |
 
 Вывод: порт вне `TARGET_PORTS` (или вне `TOP_PORTS`) nmap не проверит, и его не
 увидят ни Nuclei, ни ZAP, ни TLSX. Веб-сервис на `9443` при дефолтном наборе
@@ -254,13 +280,14 @@ DOMAINSCOPE_TARGET_PORTS=1-65535
 `DOMAINSCOPE_SCANNER_WORKERS` (по умолчанию 20) параллельных процессах,
 суммарный поток кратно выше: 20 × 500 = 10 000 пакетов/с. Проверьте, что цикл
 укладывается в `DOMAINSCOPE_TIME_LOOP_PORTSCAN`, а сеть и провайдер выдерживают
-такой поток. Для мягкого режима есть `SCANNER_MAX_RATE` и `SCANNER_TIMING_TEMPLATE`.
+такой поток. Для мягкого режима есть `SCANNER_MAX_RATE` (ниже 500 — только
+вместе с уменьшенным `SCANNER_MIN_RATE`) и `SCANNER_TIMING_TEMPLATE`.
 
 ## Time-loops (интервалы циклов, сек)
 
 | Переменная | Назначение | Значения | По умолчанию |
 |---|---|---|---|
-| `DOMAINSCOPE_TIME_LOOP` | Общий интервал между сборами | uint | `3600` |
+| `DOMAINSCOPE_TIME_LOOP` | Устаревший общий интервал: подставляется в discovery, port scan и Nuclei, только если их собственный интервал равен `0`. У всех трёх есть свои дефолты, поэтому на практике не влияет | uint | `3600` |
 | `DOMAINSCOPE_TIME_LOOP_DISCOVERY` | Discovery-цикл (subfinder + DNS + NetBox IPAM) | uint | `21600` (6 ч) |
 | `DOMAINSCOPE_TIME_LOOP_PORTSCAN` | Port scan цикл (nmap + fingerprint + SARIF) | uint | `7200` (2 ч) |
 | `DOMAINSCOPE_TIME_LOOP_NUCLEI` | Nuclei HTTP-скан цикл | uint | `3600` (1 ч) |
@@ -272,7 +299,7 @@ DOMAINSCOPE_TARGET_PORTS=1-65535
 
 | Переменная | Назначение | Значения | По умолчанию |
 |---|---|---|---|
-| `DOMAINSCOPE_DSN` | Строка подключения PostgreSQL (секрет) | DSN (`host=… user=… sslmode=disable`) | пусто (де-факто обязательна; в Helm — из Secret) |
+| `DOMAINSCOPE_DSN` | Строка подключения PostgreSQL (секрет) | DSN (`host=… user=… sslmode=disable` или `postgres://…`) | пусто (де-факто обязательна; в Helm — из Secret) |
 
 ## SARIF (выгрузка находок в Hub)
 
@@ -281,13 +308,13 @@ DOMAINSCOPE_TARGET_PORTS=1-65535
 | `DOMAINSCOPE_SARIF_ENABLED` | Включить генерацию SARIF | bool | `false` |
 | `DOMAINSCOPE_SARIF_AUTO_UPLOAD` | Автозагрузка отчётов в Hub API | bool | `false` |
 | `DOMAINSCOPE_SARIF_PRODUCT_ID` | ID продукта в Hub (обязателен при auto_upload) | строка | пусто |
-| `DOMAINSCOPE_SARIF_API_ENDPOINT` | URL Hub API (корень **без** `/api/v1` — клиент дописывает сам) | URL | пусто |
+| `DOMAINSCOPE_SARIF_API_ENDPOINT` | URL Hub API — корень, клиент сам дописывает `/api/v1/products/<id>/reports`; хвост `/api/v1` отрезается | URL | пусто |
 | `DOMAINSCOPE_SARIF_API_TOKEN` | Токен загрузки SARIF (секрет) | строка | пусто |
-| `DOMAINSCOPE_SARIF_SCANNER_NAME` | Название сканера | строка | `DomainScope` |
+| `DOMAINSCOPE_SARIF_SCANNER_NAME` | Имя сканера (`engine`) в отчётах порт-скана; отчёты Nuclei идут как `<имя>/Nuclei`, у OpenVAS, TLSX и ZAP имена фиксированные (`OpenVAS`, `TLSX`, `OWASP ZAP`) | строка | `DomainScope` |
 | `DOMAINSCOPE_SARIF_SCANNER_NODE` | Имя узла сканера | строка | `os.Hostname()` |
 | `DOMAINSCOPE_SARIF_SAVE_LOCAL` | Сохранять отчёты локально | bool | `true` |
-| `DOMAINSCOPE_SARIF_LOCAL_PATH` | Путь локального сохранения | путь | `/tmp/domain-scope/sarif` |
-| `DOMAINSCOPE_SARIF_IP_SCOPE` | Фильтр IP в SARIF | `all` \| `public` \| `private` | `all` |
+| `DOMAINSCOPE_SARIF_LOCAL_PATH` | Путь локального сохранения | путь | `/tmp/domain-scope/sarif` (в Docker-образе — `/var/log/domain-scope/sarif`) |
+| `DOMAINSCOPE_SARIF_IP_SCOPE` | Какие адреса сканируются и попадают в SARIF. `private` — RFC 1918, loopback, link-local и IPv6 ULA, `public` — всё остальное. Общий для всех сканеров, кроме OpenVAS и ZAP с собственным `*_IP_SCOPE` | `all` \| `public` \| `private` | `all` |
 | `DOMAINSCOPE_SARIF_INSECURE` | Разрешить `http://` api_endpoint в prod | bool | `false` |
 
 > При `auto_upload=true` обязательны `product_id`, `api_endpoint`, `api_token`. В prod `api_endpoint` обязан `https://`, если нет `SARIF_INSECURE=true`.
@@ -297,7 +324,7 @@ DOMAINSCOPE_TARGET_PORTS=1-65535
 | Переменная | Назначение | Значения | По умолчанию |
 |---|---|---|---|
 | `DOMAINSCOPE_HUB_ENABLED` | Брать периметр (домены и подсети) из Hub, слать туда предложения, инвентарь и отчёт о резолве. Цели из NetBox IPAM при этом не загружаются | bool | `false` |
-| `DOMAINSCOPE_HUB_API_ENDPOINT` | URL Hub API | URL | пусто |
+| `DOMAINSCOPE_HUB_API_ENDPOINT` | URL Hub API — корень **без** `/api/v1`: в отличие от SARIF-клиента, хвост здесь не отрезается | URL | пусто |
 | `DOMAINSCOPE_HUB_API_TOKEN` | Токен сервис-аккаунта (X-API-Key, секрет) | строка | пусто |
 | `DOMAINSCOPE_HUB_PROJECT_IDS` | UUID проекта Hub. Список принимается, но используется только первый идентификатор (известное ограничение, [DomainScope#7](https://gitlab.com/hub_infosec/DomainScope/-/work_items/7)) | CSV UUID | пусто |
 | `DOMAINSCOPE_HUB_INSECURE` | Разрешить `http://` Hub эндпоинт в prod | bool | `false` |
@@ -309,7 +336,7 @@ DOMAINSCOPE_TARGET_PORTS=1-65535
 | Переменная | Назначение | Значения | По умолчанию |
 |---|---|---|---|
 | `DOMAINSCOPE_NETBOX_ENABLED` | Импорт IP из NetBox IPAM (только без Hub) и обратная запись адресов цикла в IPAM | bool | `false` |
-| `DOMAINSCOPE_NETBOX_API_ENDPOINT` | URL NetBox | URL | пусто |
+| `DOMAINSCOPE_NETBOX_API_ENDPOINT` | URL NetBox — корень, без `/api` (клиент дописывает `/api/...` сам) | URL | пусто |
 | `DOMAINSCOPE_NETBOX_API_TOKEN` | API-токен NetBox (секрет) | строка | пусто |
 | `DOMAINSCOPE_NETBOX_TAG` | Тег IP для импорта целей; его же получают адреса, которые DomainScope записывает в IPAM | строка | `public-ip` |
 | `DOMAINSCOPE_NETBOX_CRAWLER_TAG` | Дополнительный тег для IP, добавленных DomainScope. Пустое значение убирает только этот тег, запись в IPAM не отключает ([DomainScope#10](https://gitlab.com/hub_infosec/DomainScope/-/work_items/10)) | строка | `domainscope-crawler` |
@@ -329,8 +356,8 @@ DOMAINSCOPE_TARGET_PORTS=1-65535
 | Переменная | Назначение | Значения | По умолчанию |
 |---|---|---|---|
 | `DOMAINSCOPE_NUCLEI_ENABLED` | Включить nuclei HTTP-скан | bool | `false` |
-| `DOMAINSCOPE_NUCLEI_TEMPLATES_PATH` | Базовая директория шаблонов (legacy) | путь | `/app/nuclei-templates` |
-| `DOMAINSCOPE_NUCLEI_TEMPLATES_PATHS` | Список директорий/файлов шаблонов (приоритетнее PATH) | CSV путей | 7 поддиректорий `http/*` |
+| `DOMAINSCOPE_NUCLEI_TEMPLATES_PATH` | Базовая директория шаблонов (legacy). Используется, только если `templates_paths` пуст, а по умолчанию он задан — поэтому сама по себе эта переменная путь не меняет | путь | `/app/nuclei-templates` |
+| `DOMAINSCOPE_NUCLEI_TEMPLATES_PATHS` | Список директорий/файлов шаблонов (приоритетнее PATH). Чтобы взять шаблоны из другого места, задавайте эту переменную | CSV путей | 7 поддиректорий `/app/nuclei-templates/http/*`: `exposures`, `misconfiguration`, `exposed-panels`, `miscellaneous`, `cves`, `vulnerabilities`, `default-logins` |
 | `DOMAINSCOPE_NUCLEI_TAGS` | Теги шаблонов | CSV | `exposure,panel,debug,misconfig,vuln,cve,default-login,rce` |
 | `DOMAINSCOPE_NUCLEI_CONCURRENCY` | Параллельные запросы | uint | `50` |
 | `DOMAINSCOPE_NUCLEI_REQUEST_TIMEOUT` | Сек на один запрос | uint | `10` |
@@ -344,6 +371,8 @@ DOMAINSCOPE_TARGET_PORTS=1-65535
 | `DOMAINSCOPE_TRUSTED_IP_TAGS` | Теги NetBox IPAM «наших» IP (фильтр для nmap+nuclei) | CSV | пусто (без фильтра) |
 | `DOMAINSCOPE_TRUSTED_IP_STATUSES` | Допустимые статусы IP в NetBox | CSV | `active,deprecated` |
 
+> Уровни критичности шаблонов задаются только в YAML (`nuclei.severity`, по умолчанию `medium`, `high`, `critical`); переменной окружения для них нет.
+
 ## OpenVAS / Greenbone (клиент GMP)
 
 | Переменная | Назначение | Значения | По умолчанию |
@@ -355,10 +384,11 @@ DOMAINSCOPE_TARGET_PORTS=1-65535
 | `DOMAINSCOPE_OPENVAS_USERNAME` | GMP username | строка | пусто |
 | `DOMAINSCOPE_OPENVAS_PASSWORD` | GMP password (секрет) | строка | пусто |
 | `DOMAINSCOPE_OPENVAS_SCAN_CONFIG_ID` | ID конфигурации скана | строка | пусто (= `Full and fast`) |
+| `DOMAINSCOPE_OPENVAS_PORT_LIST` | Port list для цели: UUID или точное имя существующего листа в gvmd. Не найден — ошибка цикла OpenVAS, без отката на `All TCP ports`. Смена применяется к следующему скану | строка | пусто (= `All TCP ports`) |
 | `DOMAINSCOPE_OPENVAS_SARIF_PRODUCT_ID` | Override SARIF product_id | строка | пусто (= глобальный) |
 | `DOMAINSCOPE_OPENVAS_SARIF_API_TOKEN` | Override SARIF токена (секрет) | строка | пусто (= глобальный) |
 | `DOMAINSCOPE_OPENVAS_IP_SCOPE` | Фильтр IP для OpenVAS | `all` \| `public` \| `private` | пусто (= глобальный) |
-| `DOMAINSCOPE_OPENVAS_SUPPRESSED_NVT_NAMES` | NVT-названия (подстроки), исключаемые из SARIF | CSV | пусто |
+| `DOMAINSCOPE_OPENVAS_SUPPRESSED_NVT_NAMES` | NVT-названия (подстроки, без учёта регистра), исключаемые из SARIF | CSV без пробелов после запятых: пробелы здесь не обрезаются и становятся частью подстроки | пусто |
 
 > При `enabled=true` обязательны `HOST`, `PORT`, `USERNAME`, `PASSWORD`.
 
@@ -368,7 +398,7 @@ DOMAINSCOPE_TARGET_PORTS=1-65535
 |---|---|---|---|
 | `DOMAINSCOPE_TLSX_ENABLED` | Включить TLS/SSL аудит | bool | `false` |
 | `DOMAINSCOPE_TLSX_CONCURRENCY` | Параллельность (>0) | uint | `50` |
-| `DOMAINSCOPE_TLSX_CERT_EXPIRY_DAYS` | Порог предупреждения об истечении серта, дней | uint | `30` |
+| `DOMAINSCOPE_TLSX_CERT_EXPIRY_DAYS` | Порог предупреждения об истечении сертификата, дней (YAML `tlsx.cert_expiry_warning_days`). `0` через ENV не задаётся — отключить предупреждение можно только в YAML. Имя `DOMAINSCOPE_TLSX_CERT_EXPIRY_WARNING_DAYS` из `.env.example` не читается | uint | `30` |
 | `DOMAINSCOPE_TLSX_SARIF_PRODUCT_ID` | Override SARIF product_id | строка | пусто (= глобальный) |
 | `DOMAINSCOPE_TLSX_SARIF_API_TOKEN` | Override SARIF токена (секрет) | строка | пусто (= глобальный) |
 
@@ -383,8 +413,10 @@ DOMAINSCOPE_TARGET_PORTS=1-65535
 | `DOMAINSCOPE_ZAP_IP_SCOPE` | Фильтр IP для ZAP | `all` \| `public` \| `private` | пусто (= глобальный) |
 | `DOMAINSCOPE_ZAP_SARIF_PRODUCT_ID` | Override SARIF product_id | строка | пусто (= глобальный) |
 | `DOMAINSCOPE_ZAP_SARIF_API_TOKEN` | Override SARIF токена (секрет) | строка | пусто (= глобальный) |
-| `DOMAINSCOPE_ZAP_INSTANCES_JSON` | JSON-массив инстансов ZAP (содержит API-ключи, секрет). Перезаписывает YAML | JSON `[{"url":…,"api_key":…}]` | пусто (обязателен при ZAP enabled) |
-| `DOMAINSCOPE_ZAP_CREDENTIALS_JSON` | JSON-массив per-host creds (секрет) | JSON `[{"host","username","password","form_url"}]` | пусто |
+| `DOMAINSCOPE_ZAP_INSTANCES_JSON` | JSON-массив инстансов ZAP (содержит API-ключи, секрет). Перезаписывает YAML | JSON `[{"url":…,"api_key":…}]` | пусто (при ZAP enabled нужен он или `zap.instances` в YAML) |
+| `DOMAINSCOPE_ZAP_CREDENTIALS_JSON` | JSON-массив per-host creds (секрет). Перезаписывает YAML | JSON `[{"host","username","password","form_url"}]` | пусто |
+
+> Порог риска находок, которые уходят в SARIF, задаётся только в YAML (`zap.min_risk`: `high` \| `medium` \| `low` \| `informational`, по умолчанию `medium`); находки ниже порога остаются в базе DomainScope.
 
 ## Обогащение из CMDB — на стороне Hub
 
@@ -411,8 +443,8 @@ DOMAINSCOPE_TARGET_PORTS=1-65535
 
 | Переменная | Назначение | Значения | По умолчанию |
 |---|---|---|---|
-| `DOMAINSCOPE_SCOPE_FAIL_OPEN` | При недоступности Hub scope: `false` = fail-CLOSED (пропустить цикл, безопасно), `true` = fail-OPEN (скан по config-доменам, риск out-of-scope) | bool | `false` |
-| `DOMAINSCOPE_PROBE_HMAC_SECRET` | HMAC-секрет для `POST /api/v1/probe`. Не задан → `/probe` 401 (fail-closed). Секрет | строка | пусто |
+| `DOMAINSCOPE_SCOPE_FAIL_OPEN` | При недоступности Hub scope: `false` = fail-CLOSED (пропустить цикл, безопасно), `true` = fail-OPEN (скан по config-доменам, риск out-of-scope) | `true`/`True`/`TRUE`/`t`/`1` или `false`/`0`; `yes`/`on` здесь не работают, неверное значение = `false` | `false` |
+| `DOMAINSCOPE_PROBE_HMAC_SECRET` | HMAC-секрет для `POST /api/v1/probe`. Задан — запрос должен нести и `X-API-Key`, и подпись тела `X-Hub-Signature`. Не задан — `/probe` проверяет только `X-API-Key` (с предупреждением в журнале при старте); так работает проверка точки из Hub, которая тело не подписывает. Секрет | строка | пусто |
 | `DOMAINSCOPE_VERIFY_API_KEY` | Включает inbound `POST /api/v1/verify-finding` (dual_verify). Секрет | строка | пусто |
 | `DOMAINSCOPE_VERIFY_HMAC_SECRET` | HMAC inbound verify-находка. Обязателен если задан `VERIFY_API_KEY` (иначе fatal). Секрет | строка | пусто |
 | `DOMAINSCOPE_HUB_CALLBACK_API_KEY` | API-ключ исходящего callback в Hub. Обязателен при verify. Секрет | строка | пусто |
@@ -428,22 +460,26 @@ DOMAINSCOPE_TARGET_PORTS=1-65535
 | Переменная | Назначение | Значения | По умолчанию |
 |---|---|---|---|
 | `RESCAN_API_KEY` | **Мастер-переключатель** inbound rescan/probe/verify HTTP-сервера. Не задан → сервер не стартует (весь блок rescan/verify неактивен). Секрет | строка | пусто |
-| `RESCAN_LISTEN_ADDR` | Адрес прослушивания rescan-сервера | `host:port` | пусто (дефолт внутри сервера) |
+| `RESCAN_LISTEN_ADDR` | Адрес прослушивания rescan-сервера | `host:port` | `:8087` |
 | `RESCAN_EXPECTED_PROJECT_ID` | Если задан — принимаются только rescan-запросы с совпадающим `project_id`; иначе любой | UUID | пусто (любой) |
-| `PROBE_ALLOW_PRIVATE` | Разрешить probe/verify приватные (RFC1918) адреса (anti-SSRF override) | `true` \| `false` | `false` |
-| `SCANNER_DNS_SERVER` | Кастомный DNS-сервер для резолва целей | `host[:port]` | пусто (= системный resolver) |
-| `LOG_LEVEL` | Уровень логирования | `debug` \| `info` \| `warn` \| `error` | внутренний дефолт логгера |
+| `PROBE_ALLOW_PRIVATE` | Разрешить probe/verify приватные (RFC1918) адреса (anti-SSRF override) | только точное `true`; любое другое значение = `false` | `false` |
+| `SCANNER_DNS_SERVER` | Кастомный DNS-сервер для резолва целей | `host[:port]`, без порта — `:53` | пусто (= системный resolver) |
+| `LOG_LEVEL` | Уровень логирования (формат — всегда JSON в stdout) | `debug` \| `info` \| `warn` \| `error`; неизвестное значение = `info` | `info` |
 | `APP_ENV` | Fallback для `DOMAINSCOPE_ENV`, если тот не задан | `production` \| `dev` \| … | пусто |
 
 ## Условно обязательные переменные
 
-Жёстко обязательных «всегда» нет (`DSN` имеет YAML-дефолт). Условно (валидация/ fatal на старте):
+Жёстко обязательных «всегда» нет: дефолта у `DSN` нет, но и отдельной проверки
+тоже: без рабочей строки подключения запуск останавливается с
+`failed to connect to db`. Условно (валидация/fatal на старте):
 
 - `DSN` — де-факто обязателен для работы.
 - `HUB_ENABLED=true` → `HUB_API_ENDPOINT`, `HUB_API_TOKEN`, `HUB_PROJECT_IDS`.
 - `NETBOX_ENABLED=true` → `NETBOX_API_ENDPOINT`, `NETBOX_API_TOKEN`; при `NETBOX_DNS_EXPORT_ENABLED=true` ещё `NETBOX_DNS_EXPORT_SOA_MNAME`.
 - `SARIF_ENABLED=true`+`SARIF_AUTO_UPLOAD=true` → `SARIF_PRODUCT_ID`, `SARIF_API_ENDPOINT`, `SARIF_API_TOKEN`.
 - `OPENVAS_ENABLED=true` → `OPENVAS_HOST`, `OPENVAS_PORT`, `OPENVAS_USERNAME`, `OPENVAS_PASSWORD`.
-- `DOMAINSCOPE_ZAP_ENABLED=true` → `DOMAINSCOPE_ZAP_INSTANCES_JSON` (≥1 инстанс с `url`+`api_key`).
+- `DOMAINSCOPE_ZAP_ENABLED=true` → `DOMAINSCOPE_ZAP_INSTANCES_JSON` или `zap.instances` в YAML (≥1 инстанс с `url`+`api_key`).
+- `DOMAINSCOPE_NUCLEI_ENABLED=true` → `DOMAINSCOPE_NUCLEI_SCAN_TIMEOUT` не больше `86400`.
+- `DOMAINSCOPE_SCANNER_WORKERS` не больше `100`; [тонкая настройка nmap](#тонкая-настройка-nmap-034) проверяется всегда.
 - `VERIFY_API_KEY` задан → `VERIFY_HMAC_SECRET`, `HUB_CALLBACK_API_KEY`, `HUB_CALLBACK_HMAC_SECRET`.
 - В **production** все secret-несущие эндпоинты обязаны быть `https://`, если не выставлен соответствующий `*_INSECURE=true`.

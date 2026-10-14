@@ -97,8 +97,6 @@ spec:
             secretKeyRef:
               name: {{ include "chart.secretsName" . }}
               key: localAdminPassword
-        - name: TELEGRAM_BOT_TOKEN
-          value: {{ .Values.backend.backend.env.telegramBotToken | quote }}
         - name: NOTIFICATIONS_DRY_RUN
           value: {{ .Values.backend.backend.env.notificationsDryRun | quote }}
         - name: LOG_MAX_SIZE_MB

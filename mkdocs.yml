@@ -1,6 +1,6 @@
 site_name: Security Hub — Документация
 site_description: "Управление уязвимостями: консолидация находок сканеров, дедупликация, триаж, сроки устранения и интеграции"
-site_url: https://s3m4rgl.github.io/hub-docs/
+site_url: https://docs.hub.vnd-tech.ru/
 repo_url: https://github.com/s3m4rgl/hub-docs
 repo_name: s3m4rgl/hub-docs
 docs_dir: docs

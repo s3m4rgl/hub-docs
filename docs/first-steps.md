@@ -126,10 +126,16 @@ curl -X POST "https://hub.example.com/api/v1/products/$PRODUCT_ID/reports" \
 
 ```bash
 curl -s -H "X-API-Key: $SA_KEY" \
-  "https://hub.example.com/api/v1/reports/$REPORT_ID" | jq '.data.status'
+  "https://hub.example.com/api/v1/reports/$REPORT_ID/summary" | jq '.data.status'
 ```
 
+С ключом сервисной учётной записи статус доступен только через `/summary` —
+`GET /api/v1/reports/$REPORT_ID` принимает лишь токен пользователя. Кроме
+статуса, сводка возвращает число находок отчёта (`findings_count`) и новых
+(`new_findings_count`).
+
 - `pending` — ещё в очереди;
+- `processing` — разбирается;
 - `completed` — разобран, находки в продукте;
 - `failed` — разбор не удался.
 
@@ -143,9 +149,10 @@ curl -s -H "Authorization: Bearer $JWT" \
 Растущее число задач в ожидании означает, что обработка не идёт. Что делать —
 [Диагностика](troubleshooting.md).
 
-Если отчёт `failed`, самые частые причины — размер больше 50 МиБ и
-недопустимое расширение файла: принимаются только `.sarif` и `.json`, архивы
-отклоняются. Подробнее: [Загрузка отчётов](integration-sarif.md).
+Слишком большой файл (для SARIF — больше 50 МиБ) и недопустимое расширение
+(принимаются только `.sarif` и `.json`, архивы отклоняются) до статуса
+`failed` не доходят: загрузка отклоняется сразу, ответом `413` или `400`.
+Подробнее: [Загрузка отчётов](integration-sarif.md).
 
 ## 7. Что настроить дальше
 

@@ -47,6 +47,8 @@ DOMAINSCOPE_DOMAINS=example.com,subsidiary.com
 DOMAINSCOPE_DSN=host=postgresql user=postgres password=<strong-password> dbname=domainscope port=5432 sslmode=disable
 
 # === Hub integration ===
+DOMAINSCOPE_HUB_ENABLED=true
+# Корень Hub без /api/v1: здесь хвост не отрезается.
 DOMAINSCOPE_HUB_API_ENDPOINT=https://hub.example.com
 DOMAINSCOPE_HUB_API_TOKEN=<api-key из Hub Service Account>
 DOMAINSCOPE_HUB_PROJECT_IDS=<project-uuid>
@@ -55,11 +57,12 @@ DOMAINSCOPE_HUB_PROJECT_IDS=<project-uuid>
 DOMAINSCOPE_SARIF_ENABLED=true
 DOMAINSCOPE_SARIF_AUTO_UPLOAD=true
 DOMAINSCOPE_SARIF_PRODUCT_ID=<product-uuid>
-# Корень Hub БЕЗ /api/v1 — DomainScope сам дописывает /api/v1/products/<id>/reports.
-# С хвостом /api/v1 путь удвоится → 404 и находки НЕ доедут в Hub.
+# Корень Hub — DomainScope сам дописывает /api/v1/products/<id>/reports
+# (хвост /api/v1, если он есть, отрезается).
 DOMAINSCOPE_SARIF_API_ENDPOINT=https://hub.example.com
 DOMAINSCOPE_SARIF_API_TOKEN=<тот же api-key или отдельный>
-DOMAINSCOPE_SARIF_SCANNER_NAME=domain-scope
+# Имя сканера (engine) в отчётах; по умолчанию DomainScope.
+DOMAINSCOPE_SARIF_SCANNER_NAME=DomainScope
 DOMAINSCOPE_SARIF_SCANNER_NODE=domain-scope-prod-01
 
 # === Опц. фильтры ===
@@ -113,56 +116,116 @@ first discovery cycle to complete`), если в базе ещё нет данн
 
 ### 4. Проверка состояния
 
-Health-сервер слушает на `:8080` по умолчанию (`DOMAINSCOPE_HEALTH_ADDR`), включается через `DOMAINSCOPE_HEALTH_ENABLED=true`:
+Health-сервер слушает на `:8080` по умолчанию (`DOMAINSCOPE_HEALTH_ADDR`), включается через `DOMAINSCOPE_HEALTH_ENABLED=true`. Проверка изнутри контейнера (в образе есть `wget`, `curl` нет):
 
 ```bash
-curl http://127.0.0.1:8080/health
-curl http://127.0.0.1:8080/ready
+docker compose exec domain-scope wget -qO- http://localhost:8080/health
+docker compose exec domain-scope wget -qO- http://localhost:8080/ready
 ```
+
+`/ready` отвечает `503`, пока не завершились первые циклы discovery и
+сканирования портов (и Nuclei, ZAP, если они включены).
 
 ## Способ 2: Kubernetes
 
-DomainScope включён в umbrella-чарт `hub-platform` (см. [Развёртывание в Kubernetes](deploy-kubernetes.md)).
+Чарт DomainScope — `charts/domainscope`. Он ставится сам по себе или в составе
+umbrella-чарта `hub-platform` под алиасом `domainscope` (см.
+[Развёртывание в Kubernetes](deploy-kubernetes.md)). Отдельного блока `scanners`
+в чарте нет: сканеры включаются ключами `domainscope.env.*`, а переменные без
+своего ключа (TLSX, тонкая настройка nmap, интервалы Nuclei/TLSX/ZAP, health,
+rescan) — списком `domainscope.extraEnv`. Полный перечень переменных —
+[Переменные окружения: DomainScope](env-domainscope.md).
 
-В `values.yaml`:
+### В составе hub-platform
+
+Umbrella сама создаёт секрет `<release>-domainscope-secrets` (DSN, ключ
+сервисной учётной записи Hub, ID проекта и продукта, пароль OpenVAS, инстансы
+ZAP) и уже включает Hub Scope API, загрузку SARIF, OpenVAS и ZAP. Ключи самого
+чарта DomainScope лежат в umbrella на уровень глубже — под
+`domainscope.domainscope.*`:
 
 ```yaml
 domainscope:
   enabled: true
-  image:
-    tag: "0.34"
-
-  env:
-    DOMAINSCOPE_DOMAINS: "example.com,subsidiary.com"
-    DOMAINSCOPE_HUB_API_ENDPOINT: "http://hub-backend:8082"
-
   postgres:
-    enabled: true
     storage:
-      size: 5Gi # умолчание чарта
+      size: 5Gi            # умолчание чарта
+  domainscope:
+    image:
+      tag: "0.34"
+    env:
+      netboxEnabled: "true"
+      netboxApiEndpoint: "https://netbox.example.com"
+    extraEnv:
+    - name: DOMAINSCOPE_TLSX_ENABLED
+      value: "true"
 
-  scanners:
-    nuclei:
-      enabled: true
-    openvas:
-      enabled: false # требует отдельный openvas chart
-    tlsx:
-      enabled: true
-    zap:
-      enabled: false # требует отдельный owasp-zap chart
-
-  secrets:
-    existingSecretName: domainscope-secrets
+secrets:
+  domainscopeNetboxApiToken: "<токен NetBox>"   # попадёт в netboxApiToken секрета
 ```
 
-Секрет:
+!!! warning "Выключая `openvas` или `zap` в umbrella, выключите их и в DomainScope"
+
+    `domainscope.domainscope.env.openvasEnabled` и `zapEnabled` в umbrella
+    стоят в `"true"` независимо от `openvas.enabled` и `zap.enabled`. Без
+    subchart пароль OpenVAS и список инстансов ZAP в секрете пусты, и
+    DomainScope останавливается на проверке конфигурации. Задайте
+    `openvasEnabled: "false"` / `zapEnabled: "false"` вместе с выключением
+    subchart.
+
+### Отдельный чарт
+
+Без umbrella чарт по умолчанию сам создаёт секрет `<fullname>-secrets` из
+блока `secrets` (пустой `postgresPassword` генерируется):
+
+```yaml
+secrets:
+  sarifApiToken: "<api-key сервисной учётной записи Hub>"
+  netboxApiToken: ""
+  openvasPassword: ""
+
+domainscope:
+  image:
+    tag: "0.34"
+  env:
+    domains: "example.com,subsidiary.com"
+    sarifEnabled: "true"
+    sarifAutoUpload: "true"
+    sarifApiEndpoint: "http://hub-backend:8082"   # корень Hub
+    sarifProductId: "<product-uuid>"
+    nucleiEnabled: "true"
+    openvasEnabled: "false"
+    zapEnabled: "false"
+
+postgres:
+  enabled: true
+  storage:
+    size: 5Gi
+```
+
+Для Hub Scope API (`domainscope.env.hubEnabled: "true"` и `hubApiEndpoint`)
+нужны ключи `hubApiToken` и `hubProjectId`, а их создаваемый чартом секрет не
+содержит. В этом случае создайте секрет сами и укажите его в
+`secrets.existingSecretName` — тогда чарт свой секрет не создаёт:
 
 ```bash
 kubectl -n hub create secret generic domainscope-secrets \
   --from-literal=postgresPassword='<strong-random>' \
-  --from-literal=hubApiToken='<token from Hub SA>' \
-  --from-literal=netboxApiToken='<если NetBox sync>'
+  --from-literal=dsn='postgres://domainscope:<тот же пароль>@<fullname>-postgres:5432/domainscope?sslmode=disable' \
+  --from-literal=hubApiToken='<api-key сервисной учётной записи Hub>' \
+  --from-literal=hubProjectId='<project-uuid>' \
+  --from-literal=sarifApiToken='<тот же api-key или отдельный>' \
+  --from-literal=sarifProductId='<product-uuid>'
 ```
+
+Ключи `dsn` и `postgresPassword` обязательны всегда, `hubApiToken` и
+`hubProjectId` — при `hubEnabled: "true"`; `sarifApiToken`, `sarifProductId`,
+`netboxApiToken`, `openvasPassword` и `zapInstancesJson` необязательны.
+`<fullname>` — `<release>-domainscope`, а если имя релиза уже содержит
+`domainscope`, то само имя релиза.
+
+Чарт не включает health-сервер (liveness-проба — `pgrep`) и не создаёт Service
+для DomainScope.
 
 ## Связанные сервисы
 
@@ -204,18 +267,18 @@ DOMAINSCOPE_NETBOX_API_TOKEN=<token>
 
 ```bash
 # Версия
-docker compose exec domain-scope domain-scope --version
+docker compose exec domain-scope /domain-scope --version
 
-# Health (default :8080, переопределяется DOMAINSCOPE_HEALTH_ADDR)
-curl http://localhost:8080/health
-curl http://localhost:8080/ready
+# Health (при DOMAINSCOPE_HEALTH_ENABLED=true; default :8080, переопределяется DOMAINSCOPE_HEALTH_ADDR)
+docker compose exec domain-scope wget -qO- http://localhost:8080/health
+docker compose exec domain-scope wget -qO- http://localhost:8080/ready
 
 # Логи (события по циклам)
 docker compose logs domain-scope | tail -100
 
 # БД заполняется
 docker compose exec postgresql psql -U postgres -d domainscope -c "SELECT COUNT(*) FROM domains;"
-docker compose exec postgresql psql -U postgres -d domainscope -c "SELECT COUNT(*) FROM port_scans;"
+docker compose exec postgresql psql -U postgres -d domainscope -c "SELECT COUNT(*) FROM findings;"   # открытые порты
 
 # В Hub приходят отчёты
 # Hub UI → Project → Reports — должен появиться новый report через ~5-15 мин после первого цикла
@@ -263,7 +326,7 @@ Compose-фрагмент:
 
 ```yaml
 services:
-  domainscope:
+  domain-scope:
     environment:
       RESCAN_API_KEY: <тот же ключ, что на Hub>
       RESCAN_LISTEN_ADDR: ":8087"
@@ -277,6 +340,11 @@ services:
 curl http://localhost:8087/healthz
 # {"status":"ok"}
 ```
+
+В Helm-чарте ключей для этих переменных нет: задайте их в
+`domainscope.extraEnv` (ключ — через `valueFrom.secretKeyRef`). Service на порт
+`8087` чарт не создаёт, его нужно добавить отдельно, чтобы Hub достучался до
+сервера.
 
 ## Связанные документы
 

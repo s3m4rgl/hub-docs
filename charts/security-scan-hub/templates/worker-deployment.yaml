@@ -64,8 +64,8 @@ spec:
             secretKeyRef:
               name: {{ include "chart.secretsName" . }}
               key: jwtSecret
-        ## Worker валидирует KEYCLOAK_CLIENT_SECRET непустым даже в AUTH_MODE=LOCAL.
-        ## Ключ Secret называется authClientSecret для ясности (см. backend).
+        ## Worker KEYCLOAK_CLIENT_SECRET не читает (LoadWorker без auth); передаётся
+        ## для единообразия с backend. Ключ Secret — authClientSecret.
         - name: KEYCLOAK_CLIENT_SECRET
           valueFrom:
             secretKeyRef:
@@ -107,10 +107,6 @@ spec:
         {{- end }}
         - name: DISPATCHER_WORKERS
           value: {{ .Values.worker.worker.env.dispatcherWorkers | quote }}
-        - name: TELEGRAM_NOTIFICATION_WORKERS
-          value: {{ .Values.worker.worker.env.telegramNotificationWorkers | quote }}
-        - name: CLEANUP_SCHEDULE
-          value: {{ .Values.worker.worker.env.cleanupSchedule | quote }}
         - name: CLEANUP_RETENTION_COMPLETED_DAYS
           value: {{ .Values.worker.worker.env.cleanupRetentionCompletedDays | quote }}
         - name: CLEANUP_RETENTION_FAILED_DAYS

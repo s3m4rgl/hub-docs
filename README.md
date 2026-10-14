@@ -8,7 +8,7 @@
 Этот репозиторий — единая точка для развёртывания и эксплуатации:
 
 - **Документация** — опубликована как сайт:
-  **https://s3m4rgl.github.io/hub-docs/**
+  **https://docs.hub.vnd-tech.ru/**
 - **Helm-чарты** — готовые чарты всех компонентов в [`charts/`](charts/)
 - **Установщик** — [`install.sh`](install.sh) и [быстрый старт](QUICKSTART.md)
 
@@ -46,7 +46,7 @@ docker compose restart backend  # backend применит роль админи
 ### k3s через Helm — полноценный стенд
 
 ```bash
-./install.sh
+sudo ./install.sh
 ```
 
 Подробнее — [QUICKSTART.md](QUICKSTART.md).
@@ -58,7 +58,8 @@ docker compose restart backend  # backend применит роль админи
 | [`docs/`](docs/) | Исходники документации (MkDocs Material), публикуются на GitHub Pages |
 | [`charts/`](charts/) | Helm-чарты: `security-scan-hub`, `domainscope`, `openvas`, `owasp-zap`, `netbox`, `hub-platform` (объединяющий), `sshub-atlassian-secrets-scanner` |
 | [`scripts/`](scripts/) | Вспомогательные скрипты |
-| [`install.sh`](install.sh) | Интерактивный установщик на k3s |
+| [`bootstrap/`](bootstrap/) | Одноразовая инициализация для Docker Compose |
+| [`install.sh`](install.sh) | Установщик на k3s (параметры — флагами, без диалога) |
 
 ## Образы
 
@@ -67,12 +68,13 @@ docker compose restart backend  # backend применит роль админи
 всех компонентов, которые вы разворачиваете, — теги публикуются независимо, и
 полный набор есть не для каждой версии.
 
-Текущее значение по умолчанию в чартах и `docker-compose.yml` — `0.33` для
-всех компонентов: Hub (backend, worker, frontend, iac-scanner) и DomainScope.
+Текущее значение по умолчанию в чартах: Hub (backend, worker, frontend,
+iac-scanner) — `0.33`, DomainScope — `0.34`. В `docker-compose.yml` и
+`.env.example` оба тега — `0.33` (`HUB_VERSION`, `DS_VERSION`).
 Совпадение версий не гарантировано — компоненты выпускаются независимо, и
 полный набор образов есть не для каждой версии.
 Как проверить доступные теги и что учесть при обновлении:
-[Обновления](https://s3m4rgl.github.io/hub-docs/upgrades/).
+[Обновления](https://docs.hub.vnd-tech.ru/upgrades/).
 
 ## Сборка документации локально
 
