@@ -82,6 +82,12 @@ DOMAINSCOPE_FINGERPRINT_TIMEOUT=10           # секунды на HTTP-fingerpr
 - `SCANNER_WORKERS=20` — норма для 1k IP при базовом наборе портов
 - `MIN_RATE=500` — агрессивный скан; уменьшите до `200` если провайдер шумит на abuse-traffic
 - `MIN_RATE=0` — режим по умолчанию nmap (адаптивный)
+- Мягче к чувствительным сетям: `SCANNER_TIMING_TEMPLATE=3`, `SCANNER_MAX_RATE=100`, `SCANNER_SCAN_DELAY=10ms`
+- Хосты, не отвечающие на ping, но с открытыми портами: `SCANNER_SKIP_HOST_DISCOVERY=true`
+- Медленный канал: `SCANNER_MAX_RTT_TIMEOUT=2s`, `SCANNER_HOST_TIMEOUT=15m`
+
+Все параметры nmap и ограничения на произвольные аргументы — в
+[справочнике переменных](env-domainscope.md#тонкая-настройка-nmap-034).
 
 **Безопасность:**
 

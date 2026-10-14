@@ -43,6 +43,67 @@
 
   `connect` медленнее `syn`, но не требует повышенных привилегий. Доступно начиная с версии 0.26.
 
+### Тонкая настройка nmap (0.34)
+
+Скорость, агрессивность, таймауты и host discovery задаются без пересборки.
+Ни одна из этих переменных не обязательна: без них скан идёт как раньше —
+`-T4`, тип из `DOMAINSCOPE_SCANNER_SCAN_TYPE`, `--min-rate` из
+`DOMAINSCOPE_SCANNER_MIN_RATE`. В `config.yml` те же ключи без префикса и в
+нижнем регистре (`scanner_timing_template` и т.д.).
+
+| Переменная | nmap | Значения | По умолчанию |
+|---|---|---|---|
+| `DOMAINSCOPE_SCANNER_TIMING_TEMPLATE` | `-T0`…`-T5` | `0`…`5` | `4` |
+| `DOMAINSCOPE_SCANNER_MAX_RATE` | `--max-rate`, пакетов/сек | uint, не меньше `MIN_RATE` | не задано |
+| `DOMAINSCOPE_SCANNER_MIN_PARALLELISM` | `--min-parallelism` | uint | не задано |
+| `DOMAINSCOPE_SCANNER_MAX_PARALLELISM` | `--max-parallelism` | uint, не меньше `MIN_PARALLELISM` | не задано |
+| `DOMAINSCOPE_SCANNER_HOST_TIMEOUT` | `--host-timeout` | длительность | не задано |
+| `DOMAINSCOPE_SCANNER_MAX_RTT_TIMEOUT` | `--max-rtt-timeout` | длительность | не задано |
+| `DOMAINSCOPE_SCANNER_INITIAL_RTT_TIMEOUT` | `--initial-rtt-timeout` | длительность, не больше `MAX_RTT_TIMEOUT` | не задано |
+| `DOMAINSCOPE_SCANNER_SCAN_DELAY` | `--scan-delay` | длительность | не задано |
+| `DOMAINSCOPE_SCANNER_MAX_RETRIES` | `--max-retries` | uint, `0` = без повторов | значение nmap |
+| `DOMAINSCOPE_SCANNER_SKIP_HOST_DISCOVERY` | `-Pn` | `true` \| `false` | `false` |
+| `DOMAINSCOPE_SCANNER_HOST_DISCOVERY_PROBES` | `-PS`/`-PA`/`-PU`/`-PY[порты]`, `-PE`, `-PP`, `-PM`, `-PO[протоколы]` | список через пробел | не задано |
+| `DOMAINSCOPE_SCANNER_NMAP_EXTRA_ARGS` | любые другие опции | список через пробел | не задано |
+
+- **Длительности** — в формате Go: `500ms`, `30s`, `15m`, с точностью до
+  миллисекунды. Голое число (`30`) — ошибка, а не 30 наносекунд.
+- **Списки разделяются пробелом**, а не запятой: запятая занята списками
+  портов (`-PS22,80`). В `config.yml` это обычный YAML-список.
+- **Host discovery** настраивается только в режиме `syn`. В `connect` nmap и
+  так всегда запускается с `-Pn`, поэтому `HOST_DISCOVERY_PROBES` вместе с
+  `connect` или с `SKIP_HOST_DISCOVERY` — ошибка старта.
+- **Неверное значение любой из этих переменных останавливает запуск** с именем
+  переменной в тексте ошибки — опечатка не превращается молча в дефолт.
+
+#### `DOMAINSCOPE_SCANNER_NMAP_EXTRA_ARGS` — что нельзя
+
+Произвольные аргументы добавляются в конец командной строки nmap. Значение
+опции пишется через `=` или слитно (`--exclude=10.0.0.1`, `-eeth0`): отдельные
+позиционные слова запрещены, иначе через них можно добавить цели вне скоупа.
+
+Отклоняются при старте:
+
+| Что | Почему |
+|---|---|
+| `-o*`, `-m`, `--append-output`, `--stylesheet`, `--webxml` | DomainScope читает результат из XML в stdout; вывод в файлы ломает разбор |
+| `-iL`, `-iR`, `--resume` | Цели задаёт только скоуп |
+| `-p`, `-F`, `--top-ports`, `--port-ratio` | Порты задаёт `DOMAINSCOPE_TARGET_PORTS` |
+| `--datadir`, `--servicedb`, `--versiondb` | Подмена файлов данных nmap |
+| `--script*`, `-sC`, `-A` | NSE не нужен циклу, а `--script` с путём — исполнение произвольного кода с правами `CAP_NET_RAW` |
+| `-s*` кроме `-sV` | `-sU` подмешал бы UDP-порты к TCP, `-sn`/`-sL` отключают скан портов; тип скана — `SCANNER_SCAN_TYPE` |
+| `-4`, `-6`, `--privileged`, `--unprivileged` | Задаются автоматически по адресу и типу скана |
+| `-h`, `-V`, `--iflist` | nmap не сканирует и не отдаёт XML |
+| `-T`, `-P*`, rate, parallelism, таймауты, retries | Для них есть отдельные переменные выше |
+
+Проверка повторяет разбор nmap: ловятся и `-oX`, и `-oN=файл`, и сокращения
+длинных опций (`--styl`), и склеенные короткие (`-nm`). Длинную опцию с одним
+дефисом, начинающуюся с запрещённой буквы (`-ip-options`), пишите с двумя:
+`--ip-options`.
+
+Разрешены и безопасны для разбора: `-v`, `-d`, `--reason`, `--packet-trace`,
+`-sV` — их вывод уходит в stderr.
+
 ## Time-loops (интервалы циклов, сек)
 
 | Переменная | Назначение | Значения | По умолчанию |
