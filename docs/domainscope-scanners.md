@@ -45,7 +45,8 @@ INFO DNS resolved: 59/59 domains
 **Что делает:**
 
 - Для каждого адреса **текущего** резолва активных доменов запускает
-  `nmap -sV -p <PORTS>`
+  `nmap -p <PORTS> -T4 -sS --min-rate 500` (в режиме `connect` вместо `-sS` —
+  `-sT -Pn --unprivileged`); сервисы определяет fingerprint, а не `nmap -sV`
 - Извлекает service, product, version, banner
 - Опционально: HTTP-fingerprinting (через native `net/http` Go)
 - Результаты → `port_scans` таблица + SARIF в Hub
@@ -54,7 +55,7 @@ INFO DNS resolved: 59/59 domains
 
 ```ini
 DOMAINSCOPE_TIME_LOOP_PORTSCAN=7200          # каждые 2 часа
-DOMAINSCOPE_TARGET_PORTS=22,80,443,3306,5432,8080,8443    # CSV
+DOMAINSCOPE_TARGET_PORTS=22,80,443,3306,5432,8080,8443    # CSV, диапазоны 1000-2000
 DOMAINSCOPE_SCANNER_WORKERS=20               # параллельные горутины (default: 20)
 DOMAINSCOPE_SCANNER_MIN_RATE=500             # nmap --min-rate (0 = выключено)
 DOMAINSCOPE_FINGERPRINT_TIMEOUT=10           # секунды на HTTP-fingerprint
@@ -89,6 +90,10 @@ DOMAINSCOPE_FINGERPRINT_TIMEOUT=10           # секунды на HTTP-fingerpr
 Все параметры nmap и ограничения на произвольные аргументы — в
 [справочнике переменных](env-domainscope.md#тонкая-настройка-nmap-034).
 
+Какие порты сканируются по умолчанию при каждом способе установки, как задать
+свои (`TARGET_PORTS` или `SCANNER_TOP_PORTS`) и почему от этого зависят Nuclei,
+ZAP и TLSX — в разделе [Порты сканирования](env-domainscope.md#порты-сканирования).
+
 **Безопасность:**
 
 Nmap по умолчанию делает SYN-scan (требует raw sockets → CAP_NET_RAW). В docker-режиме DomainScope получает capability автоматически. В bare-metal:
@@ -101,7 +106,7 @@ sudo setcap cap_net_raw+ep /usr/local/bin/domain-scope
 
 **Что делает:**
 
-- Берёт все обнаруженные HTTP/HTTPS эндпоинты (порты 80, 443, 8080, 8443 и любые с HTTP-fingerprint)
+- Берёт порты, которые nmap нашёл открытыми и fingerprint определил как HTTP/HTTPS (номер порта значения не имеет; порт вне `TARGET_PORTS` сюда не попадёт)
 - Прогоняет встроенный nuclei с подключёнными templates
 - Каждое срабатывание (info/low/medium/high/critical) → SARIF находка
 
@@ -174,7 +179,7 @@ DOMAINSCOPE_OPENVAS_IP_SCOPE=public
 
 **Что делает:**
 
-- Для каждого эндпоинт с HTTPS-портом запрашивает certificate
+- Для каждого открытого порта с TLS-протоколом по fingerprint (`https`, `imaps`, `pop3s`, `smtps`, `ldaps`) запрашивает certificate
 - Извлекает: issuer, subject, SAN, expiry date, signature algo
 - Формирует находки:
   - `LOW` — cert expires in 30 days (`DOMAINSCOPE_TLSX_CERT_EXPIRY_DAYS`)
