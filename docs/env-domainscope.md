@@ -6,7 +6,7 @@
 - числа — unsigned int; списки — через запятую;
 - источник истины по дефолтам — `DefaultConfig()` в `internal/pkg/configuration/config.go`.
 
-В Helm задаются через `domainscope.env.*`. Секреты (`DSN`, `*_API_TOKEN`, `*_PASSWORD`, `*_HMAC_SECRET`, `ZAP_*_JSON`) идут через `secretKeyRef`/Vault.
+В Helm задаются через `domainscope.env.*`; переменные без своего ключа в values — списком `domainscope.extraEnv`. Секреты (`DSN`, `*_API_TOKEN`, `*_PASSWORD`, `*_HMAC_SECRET`, `ZAP_*_JSON`) идут через `secretKeyRef`/Vault.
 
 ## Окружение / общее
 
@@ -187,14 +187,23 @@ top-100 TCP из nmap-services (сверено с nmap 7.99) без портов
 49152-49157
 ```
 
-!!! note "В Helm-чарте нет values для тонкой настройки nmap"
+!!! note "Тонкая настройка nmap в Helm — через `extraEnv`"
 
-    Шаблон `domainscope-deployment.yaml` передаёт из `domainscope.env.*` только
-    `targetPorts` и `scanType`. Для `DOMAINSCOPE_SCANNER_TOP_PORTS`, остальных
-    `DOMAINSCOPE_SCANNER_*` (включая `WORKERS` и `MIN_RATE`) и
-    `DOMAINSCOPE_OPENVAS_PORT_LIST` в чарте пока нет ни values, ни общего
-    механизма дополнительных переменных. При установке через Helm эти
-    переменные не задать без правки чарта.
+    Из `domainscope.env.*` шаблон передаёт только часть переменных, для
+    nmap — `targetPorts` и `scanType`. Остальные `DOMAINSCOPE_SCANNER_*`
+    (включая `WORKERS`, `MIN_RATE`, `TOP_PORTS`) и `DOMAINSCOPE_OPENVAS_PORT_LIST`
+    задаются списком `domainscope.extraEnv` (в `hub-platform` —
+    `domainscope.domainscope.extraEnv`). Он идёт последним и перекрывает
+    совпадающие имена:
+
+    ```yaml
+    domainscope:
+      extraEnv:
+      - name: DOMAINSCOPE_SCANNER_TIMING_TEMPLATE
+        value: "3"
+      - name: DOMAINSCOPE_SCANNER_MAX_RATE
+        value: "200"
+    ```
 
 ### Как порты влияют на другие сканеры
 
