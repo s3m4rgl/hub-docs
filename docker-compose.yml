@@ -15,6 +15,28 @@
 # Остановка:           docker compose down
 # Остановка + очистка: docker compose down -v   (удалит данные БД)
 
+# AI-триаж (LLM): одни значения на backend и worker. Backend ставит задачи
+# llm_analysis в очередь, worker их выполняет; без LLM_BASE_URL и LLM_API_KEY
+# в worker'е задачи остаются в Available. Поэтому LLM_* задаются только здесь,
+# через .env, и подключаются в оба сервиса. Отличается лишь LLM_WORKERS:
+# 0 у backend, ${LLM_WORKERS:-3} у worker (задано в самих сервисах).
+# Пустые значения = выключено; пустая переменная равна незаданной, и действует
+# значение по умолчанию Hub. Описание — .env.example и docs/integration-llm.md.
+x-llm-env: &llm-env
+  LLM_BASE_URL: ${LLM_BASE_URL:-}
+  LLM_API_KEY: ${LLM_API_KEY:-}
+  LLM_MODEL: ${LLM_MODEL:-}
+  LLM_DRY_RUN: ${LLM_DRY_RUN:-}
+  LLM_FALSE_POSITIVE_THRESHOLD: ${LLM_FALSE_POSITIVE_THRESHOLD:-}
+  LLM_CONFIRM_BEFORE_DISMISS: ${LLM_CONFIRM_BEFORE_DISMISS:-}
+  LLM_REQUEST_TIMEOUT_SECONDS: ${LLM_REQUEST_TIMEOUT_SECONDS:-}
+  LLM_TEMPERATURE: ${LLM_TEMPERATURE:-}
+  LLM_RISK_ACCEPTED_TTL_DAYS: ${LLM_RISK_ACCEPTED_TTL_DAYS:-}
+  LLM_PROMPTS_DIR: ${LLM_PROMPTS_DIR:-}
+  # Ключ шифрования API-ключа, сохранённого в интерфейсе. Пусто — берётся
+  # JWT_SECRET. У backend и worker обязан совпадать, поэтому тоже здесь.
+  LLM_SECRET: ${LLM_SECRET:-}
+
 services:
   postgres:
     image: postgres:15
@@ -62,6 +84,9 @@ services:
       # при необходимости персистентности смонтируйте сюда отдельный том.
       LOGS_PATH: /tmp/sshub/logs
       STORAGE_PATH: /tmp/sshub/storage
+      <<: *llm-env
+      # Backend только ставит задачи AI-триажа в очередь, выполняет их worker.
+      LLM_WORKERS: 0
     ports:
       - "${BACKEND_PORT:-8082}:8082"
     depends_on:
@@ -82,6 +107,23 @@ services:
       JWT_SECRET: ${JWT_SECRET:-please-change-this-to-a-random-secret}
       LOGS_PATH: /tmp/sshub/logs
       STORAGE_PATH: /tmp/sshub/storage
+      <<: *llm-env
+      # Число одновременных задач AI-триажа.
+      LLM_WORKERS: ${LLM_WORKERS:-3}
+      # Песочница активной проверки: пусто — выключена, docker — команды
+      # запускаются в отдельных контейнерах на этом же хосте. Для docker
+      # раскомментируйте ниже монтирование сокета и group_add.
+      SANDBOX_TYPE: ${SANDBOX_TYPE:-}
+      SANDBOX_IMAGE: ${SANDBOX_IMAGE:-dexionius/sshub-sandbox-tools:latest}
+    # SANDBOX_TYPE=docker: worker'у нужен доступ к Docker daemon хоста. Доступ
+    # к сокету равнозначен правам root на хосте — включайте осознанно.
+    # Worker работает от непривилегированного пользователя, поэтому ему нужна
+    # группа владельца сокета: DOCKER_GID — её номер
+    # (stat -c %g /var/run/docker.sock).
+    # volumes:
+    #   - /var/run/docker.sock:/var/run/docker.sock
+    # group_add:
+    #   - "${DOCKER_GID:-999}"
     depends_on:
       postgres:
         condition: service_healthy
