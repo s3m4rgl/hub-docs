@@ -43,21 +43,52 @@ helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
 
 {{/*
 Resolve a master-secret value: operator override > existing in-cluster > random.
-Args: ctx, secretName, key, length
+Args: ctx, secretName, key, secretKey, length
+
+key       — имя в values (secrets.<key>), например hubDbPassword.
+secretKey — имя, под которым значение ЗАПИСАНО в Secret, например dbPassword.
+
+Это два разных имени, и до этой правки lookup искал по первому: в Secret его
+нет, поэтому при каждом `helm upgrade` без явного secrets.<key> значение
+генерировалось заново. Ротировались пароль БД Hub (Postgres помнит пароль
+первого initdb — Hub терял базу), JWT-секрет (выход всех пользователей),
+пароли OpenVAS и БД DomainScope, ключ ZAP. Если secretKey не передан, ищем
+по key — прежнее поведение для вызовов, где имена совпадают.
 */}}
 {{- define "hp.resolve" -}}
 {{- $ctx := .ctx -}}
 {{- $name := .secretName -}}
 {{- $key := .key -}}
+{{- $secretKey := default .key .secretKey -}}
 {{- $length := default 32 .length -}}
 {{- $override := default "" (index $ctx.Values.secrets $key) -}}
 {{- $existing := lookup "v1" "Secret" $ctx.Release.Namespace $name -}}
 {{- if $override -}}
 {{- $override -}}
-{{- else if and $existing $existing.data (index $existing.data $key) -}}
-{{- index $existing.data $key | b64dec -}}
+{{- else if and $existing $existing.data (index $existing.data $secretKey) -}}
+{{- index $existing.data $secretKey | b64dec -}}
 {{- else -}}
 {{- randAlphaNum (int $length) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Значение, которое задаёт оператор и которое чарт НЕ генерирует (токены
+внешних систем, ключ API LLM): values > уже лежащее в Secret > пусто.
+Без lookup `default ""` обнулял такое значение при каждом upgrade, если его
+внесли в Secret руками или прошлым --set.
+Args: ctx, secretName, key (имя в values), secretKey (имя в Secret)
+*/}}
+{{- define "hp.keep" -}}
+{{- $ctx := .ctx -}}
+{{- $v := toString (default "" (index ($ctx.Values.secrets | default dict) .key)) -}}
+{{- if $v -}}
+{{- $v -}}
+{{- else -}}
+{{- $existing := lookup "v1" "Secret" $ctx.Release.Namespace .secretName -}}
+{{- if and $existing $existing.data (index $existing.data .secretKey) -}}
+{{- index $existing.data .secretKey | b64dec -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 

@@ -100,3 +100,24 @@ Resolve the WireGuard egress Secret name (used by sidecar/init).
 {{- printf "%s-wireguard" (include "chart.fullname" .) -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+Значение, которое задаёт оператор (или umbrella) и которое чарт НЕ генерирует:
+values > уже лежащее в Secret > пусто. `default ""` без lookup обнулял такие
+поля при каждом `helm upgrade`, если их внесли в Secret руками или прошлым
+--set: DomainScope терял токен Hub (SARIF не доезжал), токен NetBox, пароль
+OpenVAS и список ZAP.
+Usage: {{ include "chart.keepSecret" (dict "ctx" . "key" "sarifApiToken") }}
+*/}}
+{{- define "chart.keepSecret" -}}
+{{- $ctx := .ctx -}}
+{{- $v := toString (default "" (index ($ctx.Values.secrets | default dict) .key)) -}}
+{{- if $v -}}
+{{- $v -}}
+{{- else -}}
+{{- $existing := lookup "v1" "Secret" $ctx.Release.Namespace (include "chart.secretsName" $ctx) -}}
+{{- if and $existing $existing.data (index $existing.data .key) -}}
+{{- index $existing.data .key | b64dec -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
