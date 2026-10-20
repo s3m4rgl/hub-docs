@@ -1,0 +1,5 @@
+# expect-error: использует http://, а у backend appEnv=production
+llm:
+  enabled: true
+  baseUrl: http://llm.example.com/v1
+  apiKey: sk-test

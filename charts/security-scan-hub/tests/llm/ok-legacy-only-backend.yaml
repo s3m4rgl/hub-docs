@@ -1,0 +1,17 @@
+# Исходная авария: старые ключи заполнены только у backend. Теперь worker
+# получает те же значения. llmDryRun не задан — сохраняется прежнее значение
+# по умолчанию чарта (true).
+# expect: worker LLM_DRY_RUN=true
+# expect: backend LLM_DRY_RUN=true
+# expect-notes: оставлен прежний dryRun=true
+# expect: worker LLM_BASE_URL=https://old.example.com/v1
+# expect: worker LLM_API_KEY=secret:hub-security-scan-hub-secrets/llmApiKey
+# expect: worker LLM_WORKERS=3
+# expect: backend LLM_WORKERS=0
+secrets:
+  llmApiKey: sk-old
+backend:
+  backend:
+    env:
+      llmBaseUrl: https://old.example.com/v1
+      llmWorkers: "0"

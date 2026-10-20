@@ -16,6 +16,8 @@ spec:
       {{- include "chart.selectorLabels" . | nindent 6 }}
   template:
     metadata:
+      annotations:
+        checksum/llm: {{ include "chart.llmChecksum" . }}
       labels:
         app.kubernetes.io/component: backend
         {{- include "chart.selectorLabels" . | nindent 8 }}
@@ -107,24 +109,11 @@ spec:
           value: {{ .Values.backend.backend.env.logMaxAgeDays | quote }}
         - name: LOG_COMPRESS
           value: {{ .Values.backend.backend.env.logCompress | quote }}
-        - name: LLM_BASE_URL
-          value: {{ .Values.backend.backend.env.llmBaseUrl | quote }}
-        - name: LLM_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: {{ include "chart.secretsName" . }}
-              key: llmApiKey
-              optional: true
-        - name: LLM_MODEL
-          value: {{ .Values.backend.backend.env.llmModel | quote }}
-        - name: LLM_DRY_RUN
-          value: {{ .Values.backend.backend.env.llmDryRun | quote }}
-        - name: LLM_FALSE_POSITIVE_THRESHOLD
-          value: {{ .Values.backend.backend.env.llmFalsePositiveThreshold | quote }}
-        - name: LLM_WORKERS
-          value: {{ .Values.backend.backend.env.llmWorkers | quote }}
-        - name: LLM_REQUEST_TIMEOUT_SECONDS
-          value: {{ .Values.backend.backend.env.llmRequestTimeoutSeconds | quote }}
+        ## LLM_* — из общего блока llm: (chart.llmEnv). Backend всегда получает
+        ## LLM_WORKERS=0: он только ставит задачи AI-триажа, выполняет их worker.
+        {{- with (include "chart.llmEnv" (dict "ctx" . "role" "backend") | trim) }}
+        {{- . | nindent 8 }}
+        {{- end }}
         - name: SANDBOX_TYPE
           value: {{ .Values.backend.backend.env.sandboxType | quote }}
         ## STORAGE_PATH — куда backend пишет загруженные отчёты. Без него backend

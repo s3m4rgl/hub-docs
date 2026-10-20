@@ -36,6 +36,37 @@
   if your host has public DNS.
 {{- end }}
 
+{{- $llm := include "chart.llm" . | fromJson }}
+== AI-триаж ==
+{{- if not $llm.enabled }}
+  Выключен (llm.enabled=false). Включение: llm.enabled=true, llm.baseUrl и
+  llm.apiKey или llm.existingSecret — см. values.yaml, блок llm:.
+{{- else }}
+  Включён{{ if $llm.dryRun }} в режиме dryRun: вердикты пишутся в журнал, находки не меняются{{ end }}.
+    адрес:    {{ $llm.baseUrl }}
+    модель:   {{ default "из настроек в интерфейсе (LLM_MODEL не задан)" $llm.model }}
+    workers:  {{ $llm.workers }} в worker, 0 в backend
+    sandbox:  {{ default "выключен" .Values.worker.worker.env.sandboxType }}
+    ключ API: {{ $llm.apiKeySource }}
+  Адрес и ключ, сохранённые в интерфейсе на странице «Настройки LLM», в этой
+  версии Hub к выполнению задач не применяются: действует ключ из Secret выше.
+  Проверка: worker должен написать «LLM analysis worker registered» —
+    kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "chart.fullname" . }}-worker | grep "LLM analysis"
+  Пустой вывод — worker не подписан на очередь llm_analysis, задачи будут
+  висеть в Available. Разбор — docs/troubleshooting.md, «Задачи AI-триажа
+  висят в Available».
+{{- end }}
+{{- if $llm.legacyKeys }}
+  ВНИМАНИЕ: заданы устаревшие ключи, они будут удалены в следующих версиях
+  чарта. Перенесите значения в блок llm: и удалите их:
+{{- range $llm.legacyKeys }}
+    - {{ . }}
+{{- end }}
+{{- end }}
+{{- range $llm.warnings }}
+  ВНИМАНИЕ: {{ . }}
+{{- end }}
+
 == Next steps ==
   kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }}
   kubectl -n {{ .Release.Namespace }} logs -f deploy/{{ include "chart.fullname" . }}-backend

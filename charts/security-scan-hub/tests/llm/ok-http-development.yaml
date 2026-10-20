@@ -1,0 +1,14 @@
+# http:// допустим, когда у обоих компонентов appEnv=development.
+# expect: worker LLM_BASE_URL=http://llm.local:8000/v1
+llm:
+  enabled: true
+  baseUrl: http://llm.local:8000/v1
+  apiKey: sk-dev
+backend:
+  backend:
+    env:
+      appEnv: development
+worker:
+  worker:
+    env:
+      appEnv: development
