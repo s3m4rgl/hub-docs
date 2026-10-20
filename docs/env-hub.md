@@ -105,9 +105,9 @@
 | `LLM_BASE_URL` | Базовый URL LLM API | URL | `""` | оба |
 | `LLM_API_KEY` | Ключ LLM API | строка (секрет) | `""` | оба |
 | `LLM_MODEL` | Имя модели | строка | `glm-4-plus` | оба |
-| `LLM_DRY_RUN` | Не обращаться к LLM (заглушка) | `true` \| `false` | `false` [code] / `true` [chart] | оба |
+| `LLM_DRY_RUN` | Режим без записи: запросы к модели выполняются, вердикт пишется в журнал, находки не меняются | `true` \| `false` | `false` | оба |
 | `LLM_FALSE_POSITIVE_THRESHOLD` | Порог уверенности для отсева false-positive | float `0..1` | `0.9` | оба |
-| `LLM_WORKERS` | Кол-во LLM-worker | целое | `5` [code] / backend `0`, worker `3` [chart] | оба |
+| `LLM_WORKERS` | Кол-во LLM-worker. `0` — процесс только ставит задачи в очередь | целое | `5` [code] / backend `0`, worker `3` [chart] | оба |
 | `LLM_PROMPTS_DIR` | Каталог с промптами | путь | `""` | оба |
 | `LLM_REQUEST_TIMEOUT_SECONDS` | Таймаут запроса к LLM | целое (сек) | `180` | оба |
 | `LLM_TEMPERATURE` | Температура запросов к модели. Значение вне диапазона или нечисловое заменяется умолчанием — с сообщением в журнале, а не молча | `0.0`…`2.0` | `0.1` | оба |
@@ -124,6 +124,18 @@
 | `SANDBOX_WG_PRIVATE_KEY` | WireGuard приватный ключ (docker/local) | строка (секрет) | `""` | оба |
 | `SANDBOX_WG_SERVER_PUBLIC_KEY` | WireGuard публичный ключ сервера | строка | `""` | оба |
 | `SANDBOX_WG_SERVER_ENDPOINT` | WireGuard эндпоинт сервера | host:port | `""` | оба |
+
+`LLM_BASE_URL` и `LLM_API_KEY` нужны **и backend, и worker** с одинаковыми
+значениями: без них backend не ставит задачи AI-триажа, а worker не
+подписывается на их очередь. В Helm-чарте переменные `LLM_*` задаются одним
+блоком `llm:` (в umbrella — `hub.llm:`) и передаются обоим процессам;
+backend всегда получает `LLM_WORKERS=0`, worker — `llm.workers`. При
+`llm.enabled: false` чарт `LLM_*` не передаёт (кроме `LLM_WORKERS=0` у
+backend). Прежние `backend.backend.env.llm*` и `worker.worker.env.llm*`
+устарели — см. [Обновления](upgrades.md#llm-values). В `docker-compose.yml`
+переменные `LLM_*` берутся из `.env` и тоже передаются обоим. Адрес и ключ,
+сохранённые в интерфейсе, в текущей версии к выполнению задач не применяются.
+Подробнее — [AI-триаж и песочница](integration-llm.md).
 
 ## Уведомления
 

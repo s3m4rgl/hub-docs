@@ -471,12 +471,106 @@ Init-контейнер идемпотентен: при рестарте он �
 
 ## LLM / Sandbox
 
-### LLM-jobs не выполняются
+### Задачи AI-триажа висят в Available {#ai-available}
 
-- Backend имеет `LLM_WORKERS=0`? (должен)
-- Worker имеет `LLM_WORKERS > 0`? (должен)
-- `LLM_API_KEY` и `LLM_BASE_URL` заданы в worker?
-- Проверьте логи worker по записям про очередь `llm_analysis` — глубина > 0, есть failed jobs?
+Симптом: AI-триаж включён, задачи `llm_analysis` создаются, но остаются в
+состоянии `available` с нулевым числом попыток; в карточке находки разбор не
+появляется.
+
+Задачи ставит backend, а выполняет только worker. В текущей версии worker
+подписывается на очередь `llm_analysis`, только если в **его** окружении
+заданы `LLM_BASE_URL`, `LLM_API_KEY` и `LLM_WORKERS` больше нуля. Если чего-то
+не хватает, worker молча пропускает подписку — без единой строки в журнале, а
+backend продолжает ставить задачи. Адрес и ключ, сохранённые в интерфейсе на
+странице «Настройки LLM», на это не влияют: они в текущей версии к выполнению
+задач не применяются.
+
+**1. Журнал и окружение worker'а.** При подписке worker пишет при старте
+строку `LLM analysis worker registered` с моделью и числом исполнителей.
+
+```bash
+# Kubernetes (umbrella hub-platform, релиз hub; при установке одного чарта
+# security-scan-hub — deploy/<release>-security-scan-hub-worker)
+kubectl -n hub logs deploy/hub-worker | grep "LLM analysis"
+kubectl -n hub exec deploy/hub-worker -- env | grep -E '^(LLM_|SANDBOX_TYPE=)' \
+  | sed "s/\(LLM_API_KEY=\)..*/\1***/"
+
+# Docker Compose
+docker compose logs worker | grep "LLM analysis"
+docker compose exec worker env | grep -E '^(LLM_|SANDBOX_TYPE=)' \
+  | sed "s/\(LLM_API_KEY=\)..*/\1***/"
+```
+
+`sed` заменяет значение ключа звёздочками: строка `LLM_API_KEY=***` значит,
+что ключ задан, `LLM_API_KEY=` без звёздочек — что пуст. Сравните с тем же
+выводом для backend (`deploy/hub-backend`, `docker compose exec backend`):
+адрес и ключ должны совпадать, `LLM_WORKERS` у backend — `0`, у worker —
+больше нуля.
+
+**2. Перезапуск после исправления.** Переменные окружения читаются только при
+старте процесса.
+
+```bash
+# Kubernetes: helm upgrade с исправленными values перезапускает поды сам
+# (аннотация checksum/llm); если правили Secret вручную —
+kubectl -n hub rollout restart deploy/hub-worker deploy/hub-backend
+
+# Docker Compose: именно up -d — restart не перечитывает .env
+docker compose up -d backend worker
+```
+
+**3. Слушает ли кто-нибудь очередь.** Каждый процесс, подписанный на очередь,
+обновляет её строку в `river_queue` раз в 10 минут.
+
+```bash
+docker compose exec postgres psql -U securityhub -d securityhub -c \
+  "SELECT name, updated_at, now() - updated_at AS since_update, paused_at
+     FROM river_queue WHERE name = 'llm_analysis';"
+```
+
+В Kubernetes со встроенной базой — тот же запрос через
+`kubectl -n hub exec deploy/hub-postgres -- psql -U securityhub -d securityhub -c "..."`.
+
+- строки нет — очередь не слушал ни один процесс;
+- `since_update` больше ~25 минут — слушателя нет сейчас (две пропущенные
+  отметки подряд);
+- `paused_at` заполнен — очередь поставлена на паузу.
+
+**4. Задачи по состояниям.**
+
+```bash
+docker compose exec postgres psql -U securityhub -d securityhub -c \
+  "SELECT state, count(*), min(scheduled_at) AS oldest, max(attempt) AS max_attempt
+     FROM river_job WHERE queue = 'llm_analysis'
+    GROUP BY state ORDER BY state;"
+```
+
+Много `available` при `max_attempt = 0` — задачи никто не берёт. Задачи в
+`retryable` и `discarded` — их брали, но выполнение падало: причина в журнале
+worker'а и в поле `errors` задачи.
+
+**5. Что видно → причина → что делать.**
+
+| Что видно | Причина | Что делать |
+| --- | --- | --- |
+| В журнале worker'а нет `LLM analysis worker registered`, у worker'а пуст `LLM_BASE_URL` или `LLM_API_KEY` | LLM настроен только у backend: в Helm заполнены лишь `backend.backend.env.llm*`, в Compose переменные дописаны только в сервис backend | Helm — блок `llm:` (в umbrella — `hub.llm:`), он задаёт значения обоим; Compose — переменные `LLM_*` в `.env`. См. [AI-триаж: включение](integration-llm.md#включение-llm-без-sandbox) |
+| `LLM_API_KEY=` пуст у обоих, адрес задан | Ключ введён только в интерфейсе либо отсутствует в Secret | Задайте ключ в `llm.apiKey` / `llm.existingSecret` (в umbrella — `secrets.hubLlmApiKey`) или в `.env` |
+| `LLM_WORKERS=0` у worker'а | Число исполнителей обнулено | `llm.workers` (Helm) или `LLM_WORKERS` в `.env` — не меньше 1 |
+| Строка `registered` есть, но `river_queue.updated_at` старше ~25 минут | Worker с этой строкой уже не работает или подключён к другой базе | Проверьте `kubectl get pods` / `docker compose ps` и что `DB_HOST`, `DB_NAME` у worker'а те же, что у backend; перезапустите worker |
+| В `river_queue` нет строки `llm_analysis` | Ни один процесс не подписывался на очередь | Шаг 1: у worker'а не хватает адреса, ключа или `LLM_WORKERS` |
+| `paused_at` заполнен | Очередь поставлена на паузу вручную | Снимите паузу тем же инструментом; без него — `UPDATE river_queue SET paused_at = NULL WHERE name = 'llm_analysis';`, worker подхватит изменение сам или после перезапуска |
+| Очередь слушается, задачи переходят в `retryable` | Ошибки обращения к модели: адрес, ключ, лимиты провайдера | Журнал worker'а и поле `errors` задачи; при `429` — см. ниже |
+| Задачи выполняются (`completed`), но статусы находок не меняются | Включён режим без записи (`LLM_DRY_RUN=true`) или уверенность ниже порога | `llm.dryRun` / `LLM_DRY_RUN`, `LLM_FALSE_POSITIVE_THRESHOLD` |
+
+!!! note "Секрет шифрования общий у backend и worker"
+
+    Ключ LLM, сохранённый через интерфейс, хранится в базе зашифрованным
+    секретом `LLM_SECRET`; если он не задан — `LICENSE_SECRET`, затем
+    `JWT_SECRET`. Backend и worker работают с одной базой, поэтому эти
+    переменные у них обязаны совпадать: иначе процесс с другим секретом не
+    прочитает сохранённый ключ. Чарт и `docker-compose.yml` передают обоим один
+    `JWT_SECRET`; задавая `LLM_SECRET` или `LICENSE_SECRET` вручную, задавайте
+    их тоже обоим.
 
 ### `429 Too Many Requests`
 
@@ -654,7 +748,7 @@ curl https://hub.example.com/version
 docker compose logs domain-scope | grep "domain-scope starting"
 
 # 2. Конфиг (без секретов!)
-docker compose config | grep -v PASSWORD | grep -v SECRET | grep -v TOKEN
+docker compose config | grep -v -E 'PASSWORD|SECRET|TOKEN|API_KEY'
 
 # 3. Логи последнего часа
 docker compose logs --since 1h backend > backend.log

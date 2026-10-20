@@ -59,6 +59,31 @@ LOCAL_ADMIN_PASSWORD=<strong-admin-password>
 
 > **WARNING:** дефолтные значения `JWT_SECRET`, `DB_PASSWORD`, `DS_DB_PASSWORD` и `LOCAL_ADMIN_PASSWORD` из шаблона **не использовать в продакшене** — задайте свои случайные значения.
 
+### AI-триаж (опционально)
+
+Разбор находок языковой моделью выключен, пока в `.env` пусты `LLM_BASE_URL` и
+`LLM_API_KEY`. Чтобы включить, задайте их там:
+
+```ini
+# === AI-триаж ===
+LLM_BASE_URL=https://llm.example.com/v1
+LLM_API_KEY=<ключ>
+LLM_MODEL=glm-4-flash      # пусто — glm-4-plus
+LLM_WORKERS=3              # исполнителей в worker
+LLM_DRY_RUN=               # true — вердикты только в журнал, находки не меняются
+SANDBOX_TYPE=              # пусто — без песочницы
+```
+
+`docker-compose.yml` передаёт все `LLM_*` и backend, и worker (общий блок
+`x-llm-env`), а `LLM_WORKERS` расставляет сам: `0` у backend, значение из
+`.env` — у worker. Задавать переменные в самих сервисах не нужно: если
+дописать их только в backend, задачи AI-триажа будут ставиться, но не
+выполняться. Адрес и ключ, сохранённые в интерфейсе на странице «Настройки
+LLM», в текущей версии к выполнению задач не применяются. Песочница в режиме
+`docker` требует доступа worker'а к `/var/run/docker.sock` — монтирование
+заготовлено в `docker-compose.yml` закомментированным. Подробнее —
+[AI-триаж и песочница](integration-llm.md).
+
 Полный справочник переменных: [Конфигурация: обзор и соглашения](configuration.md).
 
 ## 3. Pull образов и запуск
@@ -184,7 +209,10 @@ server {
 docker compose logs -f                # все
 docker compose logs -f backend
 
-# Перезапуск (например, после изменения env)
+# Применить изменения .env (restart их не перечитывает — нужен up -d)
+docker compose up -d backend worker
+
+# Перезапуск без изменения env
 docker compose restart backend worker
 
 # Остановка
@@ -240,6 +268,7 @@ docker compose restart backend
 | SARIF upload 413        | Увеличьте `client_max_body_size` в nginx                                          |
 | Миграции не применяются | Проверьте `DB_*` env vars; ошибки в backend-логах                                 |
 | `docker pull denied`    | Не залогинены в registry. `docker login <registry>`                               |
+| Задачи AI-триажа висят в Available | `docker compose logs worker \| grep "LLM analysis"`; см. [Диагностика](troubleshooting.md#ai-available) |
 
 Полный troubleshooting: [Диагностика](troubleshooting.md).
 
