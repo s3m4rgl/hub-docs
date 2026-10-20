@@ -1,0 +1,10 @@
+# Backend в development, worker остался production.
+# expect-error: использует http://, а у worker appEnv=production
+llm:
+  enabled: true
+  baseUrl: http://llm.example.com/v1
+  apiKey: sk-test
+backend:
+  backend:
+    env:
+      appEnv: development

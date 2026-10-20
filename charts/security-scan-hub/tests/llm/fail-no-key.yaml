@@ -1,0 +1,4 @@
+# expect-error: llm.enabled=true, но ключ API не задан
+llm:
+  enabled: true
+  baseUrl: https://llm.example.com/v1

@@ -1,0 +1,26 @@
+# Включён, ключ в values: обе стороны получают одни значения, ключ — из Secret
+# чарта без optional.
+# expect: backend LLM_BASE_URL=https://llm.example.com/v1
+# expect: worker LLM_BASE_URL=https://llm.example.com/v1
+# expect: backend LLM_API_KEY=secret:hub-security-scan-hub-secrets/llmApiKey
+# expect: worker LLM_API_KEY=secret:hub-security-scan-hub-secrets/llmApiKey
+# expect: backend LLM_MODEL=glm-4-flash
+# expect: worker LLM_MODEL=glm-4-flash
+# expect: backend LLM_DRY_RUN=false
+# expect: worker LLM_DRY_RUN=false
+# expect: backend LLM_WORKERS=0
+# expect: worker LLM_WORKERS=2
+# expect: worker LLM_FALSE_POSITIVE_THRESHOLD=0.9
+# expect: worker LLM_REQUEST_TIMEOUT_SECONDS=180
+# expect: worker LLM_PROMPTS_DIR=-
+# expect-secret: llmApiKey=sk-test-123
+# expect-notes: workers:  2 в worker, 0 в backend
+# expect-notes: ключ API: Secret чарта hub-security-scan-hub-secrets, ключ llmApiKey (из llm.apiKey)
+# expect-notes: logs deploy/hub-security-scan-hub-worker | grep "LLM analysis"
+# expect-no-notes: устаревшие ключи
+llm:
+  enabled: true
+  baseUrl: https://llm.example.com/v1
+  model: glm-4-flash
+  workers: 2
+  apiKey: sk-test-123

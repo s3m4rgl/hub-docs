@@ -39,6 +39,8 @@ secrets:
   ## ВСЕГДА (даже в AUTH_MODE=LOCAL — там используется для подписи внутренних
   ## токенов). Имя env-переменной сложилось исторически, по сути это generic auth secret.
   authClientSecret: ""
+  ## Совместимое имя для llm.apiKey (см. блок llm: ниже). Если заданы оба,
+  ## действует llm.apiKey.
   llmApiKey: ""
   iacScannerApiKey: ""
   ## Пароль локального админа (авто-генерация). При старте backend создаёт
@@ -46,6 +48,51 @@ secrets:
   ## пользователей. Переустановки/upgrade'ы не пересоздают пользователя, если он есть.
   ## (Для helm-установки логин — admin@localhost.local.)
   localAdminPassword: ""
+
+## --- AI-триаж (LLM) ---
+##
+## Один блок на backend и worker: чарт сам передаёт обоим одинаковые адрес,
+## ключ и модель. Backend всегда получает LLM_WORKERS=0 (только ставит задачи
+## в очередь), worker — llm.workers (выполняет их).
+##
+## Включение:
+##   llm:
+##     enabled: true
+##     baseUrl: https://llm.example.com/v1
+##     apiKey: <ключ>            # попадёт в Secret чарта, ключ llmApiKey
+##   # либо готовый Secret:
+##   #  existingSecret: hub-llm
+##   #  existingSecretKey: llm-api-key
+##
+## При enabled=true рендер прерывается, если пуст baseUrl, нет ни apiKey, ни
+## existingSecret, workers < 1 или baseUrl с http:// при appEnv=production.
+## Адрес и ключ, сохранённые в интерфейсе на странице «Настройки LLM», в
+## текущей версии Hub к выполнению задач не применяются — задавайте их здесь.
+##
+## Устаревшие backend.backend.env.llm* и worker.worker.env.llm* пока читаются
+## как запасной вариант, но будут удалены; NOTES после установки перечисляет
+## найденные. Переходите на этот блок.
+llm:
+  enabled: false
+  ## Базовый адрес OpenAI-совместимого API. При appEnv=production — только https://.
+  baseUrl: ""
+  ## Имя модели. Пусто — LLM_MODEL не передаётся, модель берётся из настроек
+  ## в интерфейсе.
+  model: "glm-4-plus"
+  ## true — запросы к модели выполняются, вердикт пишется в журнал, но находки
+  ## не меняются (калибровка порога).
+  dryRun: false
+  falsePositiveThreshold: "0.9"
+  requestTimeoutSeconds: 180
+  ## Число одновременных задач AI-триажа в worker'е. Backend всегда 0.
+  workers: 3
+  ## Каталог с собственными файлами промптов внутри контейнера; пусто — встроенные.
+  promptsDir: ""
+  ## Ключ API: либо apiKey (чарт кладёт его в свой Secret и сохраняет между
+  ## upgrade), либо existingSecret — имя готового Secret в namespace релиза.
+  apiKey: ""
+  existingSecret: ""
+  existingSecretKey: "llm-api-key"
 
 backend:
   replicas: 1
@@ -83,12 +130,15 @@ backend:
       keycloakRealm: ""
       keycloakClientId: ""
       notificationsDryRun: "false"
-      llmBaseUrl: ""
-      llmModel: "glm-4-plus"
-      llmDryRun: "true"      # по умолчанию: не обращаться к LLM, пока не настроено
-      llmFalsePositiveThreshold: "0.9"
-      llmRequestTimeoutSeconds: "180"
-      llmWorkers: "0"        # backend только ставит в очередь, выполняет worker
+      ## DEPRECATED: llmBaseUrl, llmModel, llmDryRun, llmFalsePositiveThreshold,
+      ## llmRequestTimeoutSeconds, llmWorkers — используйте блок llm: выше.
+      ## Заданные явно, пока читаются как запасной вариант (llm.* важнее).
+      # llmBaseUrl: ""
+      # llmModel: "glm-4-plus"
+      # llmDryRun: "false"
+      # llmFalsePositiveThreshold: "0.9"
+      # llmRequestTimeoutSeconds: "180"
+      # llmWorkers: "0"      # игнорируется: backend всегда получает LLM_WORKERS=0
       sandboxType: ""
       ## STORAGE_PATH — subdir под volume /app/storage. Без него backend дефолтит
       ## в корень volume (root-owned) и upload отчётов падает с chmod EPERM
@@ -125,12 +175,15 @@ worker:
       dbPort: "5432"
       dbName: securityhub
       dbUser: securityhub
-      llmBaseUrl: ""
-      llmModel: "glm-4-plus"
-      llmDryRun: "true"
-      llmFalsePositiveThreshold: "0.9"
-      llmRequestTimeoutSeconds: "180"
-      llmWorkers: "3"
+      ## DEPRECATED: llmBaseUrl, llmModel, llmDryRun, llmFalsePositiveThreshold,
+      ## llmRequestTimeoutSeconds, llmWorkers — используйте блок llm: выше.
+      ## Заданные явно, пока читаются как запасной вариант (llm.* важнее).
+      # llmBaseUrl: ""
+      # llmModel: "glm-4-plus"
+      # llmDryRun: "false"
+      # llmFalsePositiveThreshold: "0.9"
+      # llmRequestTimeoutSeconds: "180"
+      # llmWorkers: "3"      # = llm.workers
       sandboxType: "kubernetes"
       sandboxImage: "dexionius/sshub-sandbox-tools:latest"
       sandboxNamespace: ""    # авто = namespace релиза

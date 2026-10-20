@@ -76,7 +76,7 @@ secrets:
   hubDbPassword: "poc_hub_db_DO_NOT_USE_IN_PROD_8f3a2c"
   hubJwtSecret: "poc_jwt_secret_DO_NOT_USE_IN_PROD_4b7e1d9a6c2f8e0b3d5a7c9e1f2a4b6c"
   hubKeycloakClientSecret: "poc_kc_client_secret_DO_NOT_USE_IN_PROD_a1b2c3"
-  hubLlmApiKey: ""                 # LLM-триаж в POC выключен (llmDryRun=true ниже)
+  hubLlmApiKey: ""                 # AI-триаж в POC выключен (hub.llm.enabled=false ниже)
   hubIacScannerApiKey: "poc_iac_api_key_DO_NOT_USE_IN_PROD_d4e5f6a7"
   ## Пароль локального админа. Логин в UI: admin@localhost.local
   ## POC: фиксированный, чтобы вход был предсказуем после отката snapshot.
@@ -139,12 +139,15 @@ hub:
         ## фронт фетчит https://hub.poc.local/api/v1/auth/config с http-страницы
         ## → mixed-content/ошибка → fallback на экран SSO вместо локального логина.
         frontendUrl: http://hub.poc.local
-        llmDryRun: "true"          # POC: без реальных вызовов LLM
   worker:
     worker:
       env:
         appEnv: development
-        llmDryRun: "true"
+  ## AI-триаж выключен. Если включаете на POC — оставьте dryRun: true, чтобы
+  ## вердикты модели писались в журнал, не меняя находки.
+  llm:
+    enabled: false
+    dryRun: true
   frontend:
     frontend:
       ## http, а не https, потому что TLS в этом стенде выключен выше

@@ -1,0 +1,21 @@
+# Заданы и новые, и старые ключи с разными значениями: действует llm.*, NOTES
+# сообщает о расхождении. Старые ключи backend и worker тоже расходятся.
+# expect: worker LLM_BASE_URL=https://new.example.com/v1
+# expect: backend LLM_BASE_URL=https://new.example.com/v1
+# expect: worker LLM_MODEL=new-model
+# expect-notes: llm.baseUrl="https://new.example.com/v1" и устаревший worker.worker.env.llmBaseUrl="https://old.example.com/v1" различаются, действует llm.baseUrl
+# expect-notes: worker.worker.env.llmModel и backend.backend.env.llmModel различаются
+llm:
+  enabled: true
+  baseUrl: https://new.example.com/v1
+  model: new-model
+  apiKey: sk-new
+backend:
+  backend:
+    env:
+      llmModel: backend-model
+worker:
+  worker:
+    env:
+      llmBaseUrl: https://old.example.com/v1
+      llmModel: worker-model

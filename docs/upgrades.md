@@ -5,6 +5,133 @@ frontend, сканер инфраструктурного кода), **0.34** �
 Hub и DomainScope независимые, и совпадение номеров — не правило: полный
 набор образов есть не для каждой версии.
 
+## Секреты hub-platform сохраняются при `helm upgrade` {#umbrella-secrets}
+
+Касается установки через umbrella-чарт `hub-platform`, у которой пароли и
+ключи в `secrets:` оставлены пустыми («сгенерируются сами»). Если вы задаёте
+их в values явно, ошибка вас не затрагивала.
+
+**Что было.** Чарт искал сгенерированное значение в существующем Secret не под
+тем именем (`hubDbPassword` вместо `dbPassword` и т. п.), не находил и
+генерировал новое при каждом `helm upgrade`. Менялись:
+
+| Secret | Ключ | Последствие |
+|---|---|---|
+| `<release>-hub-secrets` | `dbPassword`, `databaseUrl` | Postgres помнит пароль первой установки — Hub и seed-admin Job не подключаются к базе (`password authentication failed for user "securityhub"`) |
+| | `jwtSecret` | выход всех пользователей |
+| | `localAdminPassword` | seed-admin Job сбрасывает на него пароль `admin@localhost.local` |
+| | `authClientSecret`, `iacScannerApiKey` | — |
+| `<release>-openvas-secrets` | `adminPassword`, `postgresPassword` | DomainScope и OpenVAS теряют доступ к gvmd и к своей базе |
+| `<release>-zap-secrets` | `apiKey` | DomainScope не авторизуется в ZAP |
+| `<release>-domainscope-secrets` | `postgresPassword`, `dsn` | DomainScope не подключается к базе |
+
+Кроме того, ключ API LLM (`llmApiKey`) и токен NetBox (`netboxApiToken`),
+внесённые в Secret руками или прошлым `--set`, обнулялись, если их не было в
+values. В отдельном чарте `domainscope` так же обнулялись `sarifApiToken`,
+`netboxApiToken`, `openvasPassword` и `zapInstancesJson`.
+
+**Что теперь.** Значение из values важнее; если его нет — берётся то, что уже
+лежит в Secret; новое генерируется только при первой установке. Действий при
+обновлении не требуется.
+
+**Если прошлый upgrade уже сломал подключение к базе.** Чарт сохранит то
+значение, которое сейчас лежит в Secret, — это и есть пароль, с которым
+приходят Hub и Job. Приведите пароль в Postgres к нему (внутри пода локальное
+подключение не требует пароля):
+
+```bash
+NS=hub; REL=hub     # namespace и имя helm-релиза
+# Имя подчарта: если имя релиза содержит «hub» — это само имя релиза,
+# иначе <релиз>-hub (у релиза hub это hub, у релиза prod — prod-hub).
+HUB=$REL; case "$REL" in *hub*) ;; *) HUB=$REL-hub ;; esac
+PW=$(kubectl -n $NS get secret $REL-hub-secrets -o jsonpath='{.data.dbPassword}' | base64 -d)
+kubectl -n $NS exec deploy/$HUB-postgres -- \
+  psql -U securityhub -d securityhub -c "ALTER USER securityhub PASSWORD '$PW'"
+kubectl -n $NS rollout restart deploy/$HUB-backend deploy/$HUB-worker
+```
+
+Для DomainScope — то же с Secret `$REL-domainscope-secrets` (ключ
+`postgresPassword`), подом `deploy/<подчарт>-postgres` (подчарт — `$REL`, если
+имя релиза содержит «domainscope», иначе `$REL-domainscope`), пользователем и
+базой `domainscope`.
+Пароль администратора Hub — текущий `localAdminPassword` из `$REL-hub-secrets`.
+
+## AI-триаж: один блок `llm:` в чарте {#llm-values}
+
+Касается Helm-чарта `security-scan-hub` (и umbrella `hub-platform`), версия
+Hub не меняется.
+
+Раньше LLM задавался в чарте дважды — `backend.backend.env.llm*` и
+`worker.worker.env.llm*`, — и заполненный только у backend блок давал задачи
+AI-триажа, которые никто не выполняет. Теперь настройка одна:
+
+```yaml
+llm:                       # в umbrella hub-platform — hub.llm
+  enabled: true
+  baseUrl: https://llm.example.com/v1
+  model: glm-4-plus
+  dryRun: false
+  falsePositiveThreshold: "0.9"
+  requestTimeoutSeconds: 180
+  workers: 3               # только worker; backend всегда 0
+  promptsDir: ""
+  apiKey: ""               # либо existingSecret
+  existingSecret: ""
+  existingSecretKey: llm-api-key
+```
+
+Соответствие прежних ключей:
+
+| Было (`backend.backend.env.*` и `worker.worker.env.*`) | Стало |
+| --- | --- |
+| `llmBaseUrl` | `llm.baseUrl` + `llm.enabled: true` |
+| `llmModel` | `llm.model` |
+| `llmDryRun` | `llm.dryRun` |
+| `llmFalsePositiveThreshold` | `llm.falsePositiveThreshold` |
+| `llmRequestTimeoutSeconds` | `llm.requestTimeoutSeconds` |
+| `llmWorkers` у worker | `llm.workers` |
+| `llmWorkers` у backend | не нужен: backend всегда получает `0` |
+| `secrets.llmApiKey` | `llm.apiKey` (прежнее имя продолжает работать) |
+
+!!! warning "Прежние ключи устарели"
+
+    `backend.backend.env.llm*` и `worker.worker.env.llm*` убраны из значений по
+    умолчанию и будут удалены в следующих версиях чарта. Пока заданные явно,
+    они читаются как запасной вариант: явно заданный `llmBaseUrl` включает
+    AI-триаж, значение worker'а важнее значения backend'а. Если параметр задан
+    и в `llm:`, действует `llm:`. Раздел `== AI-триаж ==` в выводе
+    `helm upgrade` перечисляет найденные устаревшие ключи и расхождения.
+
+Что меняется при `helm upgrade` без правки values:
+
+- **AI-триаж был выключен** (не задан `llmBaseUrl`) — переменные `LLM_*`
+  у worker'а больше не передаются, у backend остаётся `LLM_WORKERS=0`.
+  Поведение прежнее; поды один раз перезапустятся из-за изменения шаблона.
+- **Был включён прежними ключами** — продолжает работать, и теперь worker
+  получает адрес и ключ, даже если они были заданы только у backend.
+  `llmDryRun` по умолчанию был `"true"`; если вы его не задавали, чарт
+  сохраняет `dryRun=true` и предупреждает об этом. Задайте `llm.dryRun`
+  явно при переходе на новый блок: у `llm.dryRun` значение по умолчанию —
+  `false`, вердикты модели начнут менять находки.
+- **Ключ в Secret чарта** (`llmApiKey`) больше не затирается при upgrade:
+  если в values ключ не задан, сохраняется значение из кластера.
+- **Ключ теперь обязателен.** При включённом AI-триаже отсутствие ключа —
+  ошибка рендера (Secret чарта) или `CreateContainerConfigError` (внешний
+  Secret), а не пустая переменная. Так же проверяются пустой адрес,
+  `workers < 1` и `http://` при `appEnv: production`.
+
+Порядок перехода:
+
+1. Перенесите значения в `llm:` (в umbrella — `hub.llm:`) по таблице выше и
+   удалите прежние ключи из своих values.
+2. Ключ: `llm.apiKey` или `llm.existingSecret`; в umbrella — по-прежнему
+   `secrets.hubLlmApiKey` либо `hub.llm.existingSecret`.
+3. `helm upgrade` и проверка: в выводе раздел `== AI-триаж ==` без
+   предупреждений, в журнале worker'а — строка `LLM analysis worker registered`.
+
+Адрес и ключ, сохранённые в интерфейсе на странице «Настройки LLM», в текущей
+версии Hub к выполнению задач не применяются — задавайте их в values.
+
 ## Обновление DomainScope на 0.34
 
 Действий при обновлении не требуется: без новых ключей поведение прежнее.

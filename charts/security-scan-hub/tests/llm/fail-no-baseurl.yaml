@@ -1,0 +1,4 @@
+# expect-error: llm.enabled=true, но llm.baseUrl пуст
+llm:
+  enabled: true
+  apiKey: sk-test

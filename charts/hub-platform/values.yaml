@@ -139,11 +139,15 @@ hub:
         keycloakPublicUrl: ""
         keycloakRealm: ""
         keycloakClientId: ""
-        llmDryRun: "true"
-  worker:
-    worker:
-      env:
-        llmDryRun: "true"
+  ## AI-триаж выключен. Включение — один блок на backend и worker:
+  ##   hub:
+  ##     llm:
+  ##       enabled: true
+  ##       baseUrl: https://llm.example.com/v1
+  ## ключ API — secrets.hubLlmApiKey выше (или hub.llm.existingSecret).
+  ## Все параметры — charts/security-scan-hub/values.yaml, блок llm:.
+  llm:
+    enabled: false
   frontend:
     frontend:
       env:

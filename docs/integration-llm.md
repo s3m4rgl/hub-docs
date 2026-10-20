@@ -43,18 +43,34 @@ flowchart TD
 | `LLM_WORKERS`                  | `5`           | **0 в backend, > 0 только в worker-pod**                    |
 | `LLM_REQUEST_TIMEOUT_SECONDS`  | `180`         | Timeout на один LLM-запрос                                  |
 | `LLM_PROMPTS_DIR`              | —             | Каталог с собственными файлами промптов вместо встроенных   |
-| `LLM_SECRET`                   | значение `LICENSE_SECRET` | Ключ шифрования API-ключа, сохранённого через интерфейс |
+| `LLM_SECRET`                   | значение `LICENSE_SECRET` | Ключ шифрования API-ключа, сохранённого через интерфейс. У backend и worker обязан совпадать |
 
 Анализ включается, только если в процессе заданы и `LLM_BASE_URL`, и
 `LLM_API_KEY`: без них backend не ставит задачи в очередь, а worker их не
-выполняет. Поэтому обе переменные нужны **и backend, и worker**.
+выполняет. Обе переменные нужны **и backend, и worker** с одинаковыми
+значениями. Если они заданы только у backend, задачи ставятся, но никто их не
+берёт — они остаются в состоянии Available (см.
+[Диагностика](troubleshooting.md#ai-available)).
+
+Поставляемые чарт и `docker-compose.yml` задают LLM в одном месте и передают
+значения обоим процессам — см. [Включение](#включение-llm-без-sandbox).
+`LLM_WORKERS` они расставляют сами: `0` у backend (он только ставит задачи в
+очередь), заданное число — у worker.
 
 Модель, порог, таймаут, число исполнителей, режим без записи и системный
-промпт можно задать и в административном разделе
-(`GET`/`PUT /api/v1/admin/llm-settings`). Переменная окружения, заданная
+промпт можно задать и в административном разделе (страница «Настройки LLM»,
+`GET`/`PUT /api/v1/admin/llm-settings`). Переменная окружения, заданная
 явно, имеет приоритет над настройкой из интерфейса.
 
-> **КРИТИЧНО:** В backend задавайте `LLM_WORKERS=0` — backend только ставит jobs в очередь. В worker-pod (компонент `worker`) — `LLM_WORKERS=N` (типично 1-5).
+!!! warning "Адрес и ключ из интерфейса в текущей версии не применяются"
+
+    На странице «Настройки LLM» можно сохранить адрес API и ключ, и страница
+    покажет их источником настройки установки. Но к выполнению задач в
+    текущей версии они не применяются: ставит и выполняет задачи только
+    процесс, у которого `LLM_BASE_URL` и `LLM_API_KEY` заданы в окружении.
+    Задавайте адрес и ключ в values чарта или в `.env`.
+
+> **КРИТИЧНО:** Если собираете окружение сами, в backend задавайте `LLM_WORKERS=0` — backend только ставит задачи в очередь. В worker (компонент `worker`) — `LLM_WORKERS=N` (типично 1-5).
 
 ### Sandbox
 
@@ -98,6 +114,97 @@ Hub обращается к сервису, совместимому по API с
 ## Включение LLM (без sandbox)
 
 Самый безопасный первый шаг — только классификация без активной проверки.
+Адрес, ключ и параметры модели задаются один раз — для backend и worker
+сразу.
+
+### Helm
+
+Блок `llm:` чарта `security-scan-hub`; в umbrella-чарте `hub-platform` тот же
+блок вложен в `hub:`.
+
+```yaml
+# umbrella hub-platform: values.yaml
+hub:
+  llm:
+    enabled: true
+    baseUrl: https://open.bigmodel.cn/api/paas/v4/
+    model: glm-4-flash
+    workers: 3                      # исполнителей в worker; backend всегда 0
+    falsePositiveThreshold: "0.9"
+    dryRun: false
+  worker:
+    worker:
+      env:
+        sandboxType: ""             # пусто = песочница выключена
+
+# ключ — в отдельном файле, который не хранится в git (secrets.yaml)
+secrets:
+  hubLlmApiKey: <secret>
+```
+
+При установке одного чарта `security-scan-hub` блок пишется без `hub:`, а
+ключ — в `llm.apiKey`. Если ключ уже лежит в своём Secret, укажите его вместо
+значения:
+
+```yaml
+llm:
+  enabled: true
+  baseUrl: https://open.bigmodel.cn/api/paas/v4/
+  existingSecret: hub-llm           # Secret в namespace релиза
+  existingSecretKey: llm-api-key
+```
+
+| Ключ `llm.*` | Переменная | По умолчанию |
+| --- | --- | --- |
+| `enabled` | — | `false` |
+| `baseUrl` | `LLM_BASE_URL` | — |
+| `apiKey` / `existingSecret` + `existingSecretKey` | `LLM_API_KEY` | — / `llm-api-key` |
+| `model` | `LLM_MODEL` | `glm-4-plus`; пусто — переменная не передаётся |
+| `dryRun` | `LLM_DRY_RUN` | `false` |
+| `falsePositiveThreshold` | `LLM_FALSE_POSITIVE_THRESHOLD` | `0.9` |
+| `requestTimeoutSeconds` | `LLM_REQUEST_TIMEOUT_SECONDS` | `180` |
+| `workers` | `LLM_WORKERS` у worker (у backend всегда `0`) | `3` |
+| `promptsDir` | `LLM_PROMPTS_DIR` | — |
+
+Чарт проверяет настройку при `helm install`/`upgrade` и останавливается с
+понятной ошибкой, если при `enabled: true` пуст `baseUrl`, нет ни `apiKey`,
+ни `existingSecret`, `workers` меньше 1 или адрес начинается с `http://` при
+`appEnv: production`. Ключ подключается без `optional`: если Secret или ключа
+в нём нет, под не стартует (`CreateContainerConfigError` с именем Secret), а
+не работает молча без ключа. Ключ из `llm.apiKey` хранится в Secret чарта
+(`llmApiKey`) и переживает `helm upgrade`. При смене настроек поды backend и
+worker перезапускаются сами (аннотация `checksum/llm`); исключение — смена
+значения внутри внешнего Secret из `existingSecret`: после неё выполните
+`kubectl rollout restart` для backend и worker.
+
+После установки раздел `== AI-триаж ==` в выводе `helm install`/`upgrade`
+показывает итоговые адрес, модель, число исполнителей, источник ключа и
+команду проверки. Прежние ключи `backend.backend.env.llm*` и
+`worker.worker.env.llm*` пока читаются, но устарели — см.
+[Обновления](upgrades.md#llm-values).
+
+### Docker Compose
+
+Переменные `LLM_*` задаются в `.env`; `docker-compose.yml` передаёт их и
+backend, и worker, а `LLM_WORKERS` расставляет сам (`0` у backend).
+
+```ini
+# .env
+LLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4/
+LLM_API_KEY=<secret>
+LLM_MODEL=glm-4-flash
+LLM_WORKERS=3
+LLM_FALSE_POSITIVE_THRESHOLD=0.9
+SANDBOX_TYPE=    # пусто = выключен
+```
+
+```bash
+docker compose up -d backend worker   # restart не перечитывает .env
+```
+
+### Своё окружение
+
+Если запускаете процессы сами, задайте одинаковые значения обоим:
 
 ```ini
 # backend
@@ -113,6 +220,19 @@ LLM_WORKERS=3
 LLM_FALSE_POSITIVE_THRESHOLD=0.9
 SANDBOX_TYPE=    # пусто = выключен
 ```
+
+### Проверка
+
+Worker, подписавшийся на очередь, пишет при старте строку
+`LLM analysis worker registered`:
+
+```bash
+kubectl -n hub logs deploy/hub-worker | grep "LLM analysis"
+docker compose logs worker | grep "LLM analysis"
+```
+
+Пустой вывод значит, что worker на очередь не подписан и задачи будут висеть
+в Available — см. [Диагностика](troubleshooting.md#ai-available).
 
 После рестарта worker:
 
@@ -135,7 +255,7 @@ SANDBOX_OUTPUT_LIMIT_KB=10
 
 Требования:
 
-- Worker должен иметь доступ к Docker daemon (mount `/var/run/docker.sock` или `DOCKER_HOST`)
+- Worker должен иметь доступ к Docker daemon (mount `/var/run/docker.sock` или `DOCKER_HOST`). В поставляемом `docker-compose.yml` монтирование сокета и `group_add` у worker'а заготовлены закомментированными — раскомментируйте их и задайте в `.env` `SANDBOX_TYPE=docker`. Доступ к сокету равнозначен правам root на хосте
 - Образ должен быть доступен (приватный registry — `docker login`)
 
 ### Kubernetes-режим (production)
@@ -255,7 +375,7 @@ docker compose logs -f worker | grep sandbox
 
 | Симптом                           | Что проверить                                                                              |
 | --------------------------------- | ------------------------------------------------------------------------------------------ |
-| LLM jobs не выполняются           | `LLM_WORKERS>0` только в worker-pod. Backend должен иметь `=0`. `LLM_BASE_URL` и `LLM_API_KEY` должны быть заданы в обоих |
+| Задачи висят в Available          | У worker'а нет `LLM_BASE_URL`, `LLM_API_KEY` или `LLM_WORKERS>0` — см. [Диагностика](troubleshooting.md#ai-available) |
 | `429 Too Many Requests`           | Превышен rate limit провайдера. Уменьшите `LLM_WORKERS` или включите задержку в провайдере |
 | `Sandbox failed: image not found` | Образ недоступен. Проверьте `docker pull $SANDBOX_IMAGE` или `kubectl get pods`            |
 | Sandbox команды timeout           | Увеличьте `SANDBOX_TIMEOUT_SECONDS`                                                        |

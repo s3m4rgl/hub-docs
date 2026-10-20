@@ -1,0 +1,6 @@
+# Старый llmBaseUrl включает AI-триаж — и ту же проверку ключа.
+# expect-error: llm.enabled=true, но ключ API не задан
+worker:
+  worker:
+    env:
+      llmBaseUrl: https://llm.example.com/v1

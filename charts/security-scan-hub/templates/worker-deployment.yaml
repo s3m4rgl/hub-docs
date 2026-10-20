@@ -17,6 +17,8 @@ spec:
       {{- include "chart.selectorLabels" . | nindent 6 }}
   template:
     metadata:
+      annotations:
+        checksum/llm: {{ include "chart.llmChecksum" . }}
       labels:
         app.kubernetes.io/component: worker
         {{- include "chart.selectorLabels" . | nindent 8 }}
@@ -71,24 +73,11 @@ spec:
             secretKeyRef:
               name: {{ include "chart.secretsName" . }}
               key: authClientSecret
-        - name: LLM_BASE_URL
-          value: {{ .Values.worker.worker.env.llmBaseUrl | quote }}
-        - name: LLM_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: {{ include "chart.secretsName" . }}
-              key: llmApiKey
-              optional: true
-        - name: LLM_MODEL
-          value: {{ .Values.worker.worker.env.llmModel | quote }}
-        - name: LLM_DRY_RUN
-          value: {{ .Values.worker.worker.env.llmDryRun | quote }}
-        - name: LLM_FALSE_POSITIVE_THRESHOLD
-          value: {{ .Values.worker.worker.env.llmFalsePositiveThreshold | quote }}
-        - name: LLM_WORKERS
-          value: {{ .Values.worker.worker.env.llmWorkers | quote }}
-        - name: LLM_REQUEST_TIMEOUT_SECONDS
-          value: {{ .Values.worker.worker.env.llmRequestTimeoutSeconds | quote }}
+        ## LLM_* — из общего блока llm: (chart.llmEnv), те же значения, что у
+        ## backend; LLM_WORKERS = llm.workers. При llm.enabled=false не задаются.
+        {{- with (include "chart.llmEnv" (dict "ctx" . "role" "worker") | trim) }}
+        {{- . | nindent 8 }}
+        {{- end }}
         - name: SANDBOX_TYPE
           value: {{ .Values.worker.worker.env.sandboxType | quote }}
         - name: SANDBOX_IMAGE

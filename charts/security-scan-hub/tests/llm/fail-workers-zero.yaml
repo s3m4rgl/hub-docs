@@ -1,0 +1,6 @@
+# expect-error: llm.workers=0: нужно не меньше 1
+llm:
+  enabled: true
+  baseUrl: https://llm.example.com/v1
+  apiKey: sk-test
+  workers: 0

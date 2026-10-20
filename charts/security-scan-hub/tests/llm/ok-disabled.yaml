@@ -1,0 +1,12 @@
+# AI-триаж выключен (значения по умолчанию): у worker'а нет ни одной LLM_*,
+# у backend — только LLM_WORKERS=0.
+# expect: backend LLM_WORKERS=0
+# expect: backend LLM_BASE_URL=-
+# expect: backend LLM_API_KEY=-
+# expect: worker LLM_BASE_URL=-
+# expect: worker LLM_API_KEY=-
+# expect: worker LLM_WORKERS=-
+# expect-secret: llmApiKey=
+# expect-notes: Выключен (llm.enabled=false)
+# expect-no-notes: устаревшие ключи
+{}

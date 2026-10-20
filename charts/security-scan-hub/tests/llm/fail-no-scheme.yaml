@@ -1,0 +1,5 @@
+# expect-error: нужен полный адрес со схемой https://
+llm:
+  enabled: true
+  baseUrl: llm.example.com/v1
+  apiKey: sk-test

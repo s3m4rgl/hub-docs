@@ -1,0 +1,32 @@
+# Старые ключи (как в документации до перехода на llm:): llmBaseUrl включает
+# AI-триаж, значения подхватываются, NOTES предупреждает.
+# expect: backend LLM_BASE_URL=https://old.example.com/v1
+# expect: worker LLM_BASE_URL=https://old.example.com/v1
+# expect: backend LLM_WORKERS=0
+# expect: worker LLM_WORKERS=4
+# expect: worker LLM_MODEL=old-model
+# expect: backend LLM_MODEL=old-model
+# expect: worker LLM_DRY_RUN=true
+# expect: worker LLM_API_KEY=secret:hub-security-scan-hub-secrets/llmApiKey
+# expect-secret: llmApiKey=sk-old
+# expect-notes: устаревшие ключи
+# expect-no-notes: оставлен прежний dryRun=true
+# expect-notes: - worker.worker.env.llmBaseUrl
+# expect-notes: - backend.backend.env.llmBaseUrl
+# expect-notes: - backend.backend.env.llmWorkers
+# expect-notes: backend.backend.env.llmWorkers=5 игнорируется
+secrets:
+  llmApiKey: sk-old
+backend:
+  backend:
+    env:
+      llmBaseUrl: https://old.example.com/v1
+      llmModel: old-model
+      llmWorkers: "5"
+worker:
+  worker:
+    env:
+      llmBaseUrl: https://old.example.com/v1
+      llmModel: old-model
+      llmDryRun: "true"
+      llmWorkers: "4"
