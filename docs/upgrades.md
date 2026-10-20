@@ -5,6 +5,57 @@ frontend, сканер инфраструктурного кода), **0.34** �
 Hub и DomainScope независимые, и совпадение номеров — не правило: полный
 набор образов есть не для каждой версии.
 
+## Секреты hub-platform сохраняются при `helm upgrade` {#umbrella-secrets}
+
+Касается установки через umbrella-чарт `hub-platform`, у которой пароли и
+ключи в `secrets:` оставлены пустыми («сгенерируются сами»). Если вы задаёте
+их в values явно, ошибка вас не затрагивала.
+
+**Что было.** Чарт искал сгенерированное значение в существующем Secret не под
+тем именем (`hubDbPassword` вместо `dbPassword` и т. п.), не находил и
+генерировал новое при каждом `helm upgrade`. Менялись:
+
+| Secret | Ключ | Последствие |
+|---|---|---|
+| `<release>-hub-secrets` | `dbPassword`, `databaseUrl` | Postgres помнит пароль первой установки — Hub и seed-admin Job не подключаются к базе (`password authentication failed for user "securityhub"`) |
+| | `jwtSecret` | выход всех пользователей |
+| | `localAdminPassword` | seed-admin Job сбрасывает на него пароль `admin@localhost.local` |
+| | `authClientSecret`, `iacScannerApiKey` | — |
+| `<release>-openvas-secrets` | `adminPassword`, `postgresPassword` | DomainScope и OpenVAS теряют доступ к gvmd и к своей базе |
+| `<release>-zap-secrets` | `apiKey` | DomainScope не авторизуется в ZAP |
+| `<release>-domainscope-secrets` | `postgresPassword`, `dsn` | DomainScope не подключается к базе |
+
+Кроме того, ключ API LLM (`llmApiKey`) и токен NetBox (`netboxApiToken`),
+внесённые в Secret руками или прошлым `--set`, обнулялись, если их не было в
+values. В отдельном чарте `domainscope` так же обнулялись `sarifApiToken`,
+`netboxApiToken`, `openvasPassword` и `zapInstancesJson`.
+
+**Что теперь.** Значение из values важнее; если его нет — берётся то, что уже
+лежит в Secret; новое генерируется только при первой установке. Действий при
+обновлении не требуется.
+
+**Если прошлый upgrade уже сломал подключение к базе.** Чарт сохранит то
+значение, которое сейчас лежит в Secret, — это и есть пароль, с которым
+приходят Hub и Job. Приведите пароль в Postgres к нему (внутри пода локальное
+подключение не требует пароля):
+
+```bash
+NS=hub; REL=hub     # namespace и имя helm-релиза
+# Имя подчарта: если имя релиза содержит «hub» — это само имя релиза,
+# иначе <релиз>-hub (у релиза hub это hub, у релиза prod — prod-hub).
+HUB=$REL; case "$REL" in *hub*) ;; *) HUB=$REL-hub ;; esac
+PW=$(kubectl -n $NS get secret $REL-hub-secrets -o jsonpath='{.data.dbPassword}' | base64 -d)
+kubectl -n $NS exec deploy/$HUB-postgres -- \
+  psql -U securityhub -d securityhub -c "ALTER USER securityhub PASSWORD '$PW'"
+kubectl -n $NS rollout restart deploy/$HUB-backend deploy/$HUB-worker
+```
+
+Для DomainScope — то же с Secret `$REL-domainscope-secrets` (ключ
+`postgresPassword`), подом `deploy/<подчарт>-postgres` (подчарт — `$REL`, если
+имя релиза содержит «domainscope», иначе `$REL-domainscope`), пользователем и
+базой `domainscope`.
+Пароль администратора Hub — текущий `localAdminPassword` из `$REL-hub-secrets`.
+
 ## Обновление DomainScope на 0.34
 
 Действий при обновлении не требуется: без новых ключей поведение прежнее.
